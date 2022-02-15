@@ -22,6 +22,10 @@ Evaluate.ipynb
 evaluation_lib_editable.py
 methods_lib_cfp.py
 methods_lib_cfp_stable.py
+*old*
+*Trash*
+*.e
+*.o
 
 #Hidden dirs
 *.ipynb_checkpoints/*
