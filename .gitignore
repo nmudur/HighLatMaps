@@ -28,6 +28,6 @@ methods_lib_cfp_stable.py
 *.o
 
 #Hidden dirs
-*.ipynb_checkpoints/*
+*.ipynb_checkpoints*
 *~*
 *__pycache__*
