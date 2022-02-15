@@ -1,0 +1,29 @@
+# Large files
+*.fits
+*.pkl
+
+#Directories
+accs/*
+angular_cross_correlation/*
+archive/*
+core_notebooks/*
+data/*
+methods_code/*
+notebooks/*
+notebooks_test/*
+reference_maps/*
+runs/*
+
+#Misc top level files
+Analysis.ipynb
+Evaluate-Copy1.ipynb
+Evaluate-stable.ipynb
+Evaluate.ipynb
+evaluation_lib_editable.py
+methods_lib_cfp.py
+methods_lib_cfp_stable.py
+
+#Hidden dirs
+*.ipynb_checkpoints/*
+*~*
+*__pycache__*
