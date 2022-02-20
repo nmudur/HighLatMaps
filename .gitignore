@@ -31,3 +31,4 @@ methods_lib_cfp_stable.py
 *.ipynb_checkpoints*
 *~*
 *__pycache__*
+*.DS_Store
