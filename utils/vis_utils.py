@@ -12,8 +12,9 @@ from dustmaps.sfd import SFDQuery
 from dustmaps.bayestar import BayestarQuery
 from dustmaps.planck import PlanckGNILCQuery
 
-sys.path.append('/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/methods_code/')
+sys.path.append('/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/methods_code_Nresol/')
 from utils_circpatch import *  # check if import works
+from do_recon_tilewise import *
 
 sfd = SFDQuery()
 gnilc = PlanckGNILCQuery()
@@ -71,28 +72,6 @@ def get_accdict_with_references(resultdictnames, runtitles, n_bootstrap=1):
     accdict.update({'resultdictnames': resultdictnames})
     return accdict
 '''
-
-def get_sfd_error(reconmap, sfdmap, pix):
-    residual = reconmap[pix] - sfdmap[pix]
-    mean, std = np.mean(residual), np.std(residual)
-    print('Mean = {:.3f} Std = {:.3f}'.format(mean, std))
-    return mean, std
-
-def get_sfd_errorplot(reconmap, sfdmap, pix, args):
-    residual = reconmap[pix] - sfdmap[pix]
-    mean, std = np.mean(residual), np.std(residual)
-    print('Mean = {:.3f} Std = {:.3f}'.format(mean, std))
-    fig, ax = plt.subplots()
-    ax.scatter(sfdmap[pix], reconmap[pix], s=1)
-    ax.plot(np.linspace(np.min(sfdmap[pix]), np.max(sfdmap[pix]), 50), np.linspace(np.min(sfdmap[pix]), np.max(sfdmap[pix]), 50), linestyle='dashed', c='k')
-    plt.xlabel('SFD')
-    plt.ylabel('Map Input')
-    if 'xlim' in args.keys():
-        ax.set_xlim(args['xlim'])
-    if 'ylim' in args.keys():
-        ax.set_ylim(args['ylim'])
-    plt.show()
-    return mean, std
 
 
 def plot_with_sfd_presaved_2048(dustmap, selpix, rot=[0, 90], suptitle=None, xsize=3000):
@@ -196,17 +175,29 @@ def get_testbed_dict(name, Nresol=2048):
         rot, xsize= [135, -30], 1000
     elif name=='NGC':
         pix2k = get_tile_idx_in_circlepatch(Nresol, [0, 90], 50)
-        rot, xsize = [0, 90], 5000    
+        rot, xsize = [0, 90], 5000
+    elif name=='NGC_bgt90':
+        pix2k = get_tile_idx_in_circlepatch(Nresol, [0, 90], 10)
+        rot, xsize = [0, 90], 5000
     elif name=='NGC_bgt35':
         pix2k = get_tile_idx_in_circlepatch(Nresol, [0, 90], 55)
         rot, xsize = [0, 90], 5000
+    elif name=='FullSky_Bayestar':
+        assert Nresol==2048
+        b17map = get_bayestar2017_map()
+        notnan = ~np.isnan(b17map)
+        coords = np.arange(hp.nside2npix(2048))
+        assert len(coords) == len(b17map)
+        pix2k = coords[notnan]
+        rot= [0, 90]
+        xsize= 5000
         
     else:
         raise NotImplementedError
     return {'name':name, 'coords': pix2k, 'Nresol': Nresol, 'rot': rot, 'xsize': xsize}
 
 
-def plot_maps_comparison(testbedlist, compmaps, norm='SFD'):
+def plot_maps_comparison(testbedlist, compmaps, norm='SFD', figsize=(20, 20)):
     #cols: maps, rows: regions
     nrows, ncols = len(testbedlist), len(compmaps)
     
@@ -216,8 +207,7 @@ def plot_maps_comparison(testbedlist, compmaps, norm='SFD'):
         else:
             sfdmap = get_sfd_map()
     
-    
-    fig, ax = plt.subplots(figsize=(20, 20), nrows=nrows, ncols=ncols)
+    fig, ax = plt.subplots(figsize=figsize, nrows=nrows, ncols=ncols)
     for (rix, reg) in enumerate(testbedlist):
         if norm=='SFD':
             vmin, vmax = np.min(sfdmap[reg['coords']]), np.max(sfdmap[reg['coords']])
@@ -226,18 +216,29 @@ def plot_maps_comparison(testbedlist, compmaps, norm='SFD'):
             pargs = {'norm': 'hist'}
             
         for (cix, mtup) in enumerate(compmaps):
-            plt.axes(ax[rix, cix])
+            if (nrows==1):
+                plt.axes(ax[cix])
+            else:
+                plt.axes(ax[rix, cix])
             hp.gnomview(mtup[1], rot=testbedlist[rix]['rot'], hold=True, title=reg['name']+': '+mtup[0], xsize=testbedlist[rix]['xsize'], **pargs)
     plt.suptitle('Comparison')
     plt.show()
     return
+
+def query_at_lbcoords(lbpoint, compmaps, Nsideresol):
+    pixel = hp.ang2pix(Nsideresol, *lbpoint, lonlat=True)
+    for m, mtup in enumerate(compmaps):
+        assert len(mtup[1])==hp.nside2npix(Nsideresol)
+        print(mtup[0], ': ', mtup[1][pixel])
+    return
+              
 
 def plot_acc_comparison(accsref, accobjlist, cols, ref_choice=[0, 1, 2, 3], ylim=[-0.5, 0.5]):
     plt.figure(figsize=(10,4))
     for m in range(len(accsref)):
         if m in ref_choice:
             errens = accsref[m][-1]
-            sampstd = 1000*np.sqrt(np.mean(errens**2, axis=0))
+            sampstd = 1000*np.sqrt(np.mean(errens**2, axis=0)) #RMSE: variability about 0
             res = 1000*accsref[m][1]['accs'].flatten()
             lb, ub = 0 - sampstd, sampstd
             plt.fill_between(accsref[m][1]['mean_z']+1, -(2*sampstd), (2*sampstd), alpha=0.1, color=cols[m])
@@ -265,6 +266,34 @@ def plot_acc_comparison(accsref, accobjlist, cols, ref_choice=[0, 1, 2, 3], ylim
     plt.ylim(ylim)
     plt.show()
     return
+
+
+
+def get_sfd_error(reconmap, sfdmap, pix):
+    if np.isnan(reconmap[pix]).sum()!=0:
+        print('Nan at {} pixels'.format(np.isnan(reconmap[pix]).sum()))
+        pix = pix[~np.isnan(reconmap[pix])]
+        
+    residual = reconmap[pix] - sfdmap[pix]
+    mean, std = np.mean(residual), np.std(residual)
+    print('Mean = {:.3f} Std = {:.3f}'.format(mean, std))
+    return mean, std
+
+def get_sfd_errorplot(reconmap, sfdmap, pix, args):
+    residual = reconmap[pix] - sfdmap[pix]
+    mean, std = np.mean(residual), np.std(residual)
+    print('Mean = {:.3f} Std = {:.3f}'.format(mean, std))
+    fig, ax = plt.subplots()
+    ax.scatter(sfdmap[pix], reconmap[pix], s=1)
+    ax.plot(np.linspace(np.min(sfdmap[pix]), np.max(sfdmap[pix]), 50), np.linspace(np.min(sfdmap[pix]), np.max(sfdmap[pix]), 50), linestyle='dashed', c='k')
+    plt.xlabel('SFD')
+    plt.ylabel('Map Input')
+    if 'xlim' in args.keys():
+        ax.set_xlim(args['xlim'])
+    if 'ylim' in args.keys():
+        ax.set_ylim(args['ylim'])
+    plt.show()
+    return mean, std
 
 def visualize_cuts_multirow(df_input, cutfunc, cut_args, attributes, get_mask=False, figsize=(8, 8)):
     '''
@@ -331,3 +360,39 @@ def visualize_cuts_multirow(df_input, cutfunc, cut_args, attributes, get_mask=Fa
     else:
         return df_after
 
+
+def get_binned_meanstar_properties(testbed, Nsideresol, fieldlist, STARFILE= '/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/data/lsdraw/stars_edr3/{}.fits'):
+    '''
+    returns maps with mean posterior properties binned to Nsideresol
+    testbed: Region (output of get_testbed_dict)
+    Nsideresol: Pixelization to which starproperties are to be binned
+    fieldlist: which columns to take the mean of -- either a column in starfile or 'z' (z-score)
+    STARFILE: starfile format
+    returns: maskpix: pixels which contained stars
+             maps: list of maps with the mean of the stars' properties binned to Nsideresol
+    '''
+    maps= []
+    maskpix = []
+    for im in range(len(fieldlist)):
+        maps.append(np.ones(hp.nside2npix(Nsideresol))*hp.UNSEEN)
+    #get sfd for z score
+    if 'z' in fieldlist:
+        assert Nsideresol==2048 #because you're querying sfd at the same nsideresol as the starmap is being binned to
+        sfdmap = get_sfd_map()
+    #which starfiles need to be queried
+    t16 = np.unique(get_largepix_for_smallpix(testbed['coords'], testbed['Nresol'], 16))
+    print('# Nside=16 pixels', len(t16))
+    #for each starfile
+    for tile in t16:
+        pix2k = get_smallpix_in_tilepix(16, tile, Nsideresol)
+        dfstars = get_stars_within_tile(16, tile, convert_to_dataframe(STARFILE.format(tile)))
+        dfstars['pix2048'] = hp.ang2pix(Nsideresol, dfstars['l'].to_numpy(), dfstars['b'].to_numpy(), lonlat=True)
+        for im, field in enumerate(fieldlist):
+            if field=='z':
+                dfstars['z'] = (dfstars['E_median'].to_numpy() - sfdmap[dfstars['pix2048'].to_numpy()]) / dfstars['E_sigma'].to_numpy()
+            dfpwise = dfstars[['pix2048', field]].groupby('pix2048').mean()
+            maps[im][dfpwise.index.values] = dfpwise[field].to_numpy()
+        maskpix.append(dfpwise.index.values)
+        if tile%100==0:
+            print('{} Pix16 done'.format(tile))
+    return np.hstack(maskpix), maps
