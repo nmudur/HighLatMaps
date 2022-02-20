@@ -13,6 +13,7 @@ notebooks/*
 notebooks_test/*
 reference_maps/*
 runs/*
+notebooks_main1/fullsky_runs/*
 
 #Misc top level files
 Analysis.ipynb
@@ -26,6 +27,7 @@ methods_lib_cfp_stable.py
 *Trash*
 *.e
 *.o
+notebooks_main1/2_17_Posteriors.ipynb
 
 #Hidden dirs
 *.ipynb_checkpoints*
