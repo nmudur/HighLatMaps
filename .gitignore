@@ -14,6 +14,7 @@ notebooks_test/*
 reference_maps/*
 runs/*
 notebooks_main1/fullsky_runs/*
+reconmaps/*
 
 #Misc top level files
 Analysis.ipynb
