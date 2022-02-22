@@ -14,6 +14,7 @@ notebooks_test/*
 reference_maps/*
 runs/*
 notebooks_main1/fullsky_runs/*
+reconmaps/*
 
 #Misc top level files
 Analysis.ipynb
@@ -36,3 +37,4 @@ notebooks_main1/2_17_Posteriors.ipynb
 
 #Exceptions to save
 !notebooks_test/11_20_presave_Bayestar2017.ipynb
+*.DS_Store

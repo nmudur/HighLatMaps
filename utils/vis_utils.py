@@ -8,26 +8,49 @@ import h5py
 from astropy.coordinates import SkyCoord
 import astropy.units as units
 
+from sys import platform
 from dustmaps.sfd import SFDQuery
 from dustmaps.bayestar import BayestarQuery
 from dustmaps.planck import PlanckGNILCQuery
 
-sys.path.append('/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/methods_code_Nresol/')
+if platform=='linux':
+    gnilc = PlanckGNILCQuery()
+    sys.path.append('/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/methods_code_Nresol/')
+else:
+    sys.path.append('../methods_code_Nresol/')
+
+
 from utils_circpatch import *  # check if import works
 from do_recon_tilewise import *
 
 sfd = SFDQuery()
-gnilc = PlanckGNILCQuery()
 
 
-def get_bayestar2017_map():
-    with h5py.File('/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/reference_maps/bayestar2017.hdf5', 'r') as f:
-        b17mean = np.array(f['mean'])
-        coords_lb = np.array(f['coords_lb'])
+def get_bayestar2017_map(return_sigma=False):
+    if platform=='linux':
+        bstarpath = '/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/reference_maps/'
+    else:
+        bstarpath = '../../../reference_maps/'
+
+    if return_sigma:
+        with h5py.File(bstarpath+'bayestar2017_wsigma.hdf5', 'r') as f:
+            b17mean = np.array(f['mean'])
+            b17sigma = np.array(f['sigma'])
+            coords_lb = np.array(f['coords_lb'])
+    else:
+        with h5py.File(bstarpath+'bayestar2017.hdf5', 'r') as f:
+            b17mean = np.array(f['mean'])
+            coords_lb = np.array(f['coords_lb'])
+
     pix2048 = hp.pixelfunc.ang2pix(2048, coords_lb[:, 0], coords_lb[:, 1], lonlat=True)
     b17map = np.empty(hp.pixelfunc.nside2npix(2048))
     b17map[pix2048] = b17mean
-    return b17map
+    if return_sigma:
+        b17sigma_map = np.empty(hp.pixelfunc.nside2npix(2048))
+        b17sigma_map[pix2048] = b17sigma
+        return b17map, b17sigma_map
+    else:
+        return b17map
 
 def get_sfd_map():
     pix2048 = np.arange(hp.pixelfunc.nside2npix(2048))
@@ -269,14 +292,16 @@ def plot_acc_comparison(accsref, accobjlist, cols, ref_choice=[0, 1, 2, 3], ylim
 
 
 
-def get_sfd_error(reconmap, sfdmap, pix):
+def get_sfd_error(reconmap, sfdmap, pix, printout=True):
     if np.isnan(reconmap[pix]).sum()!=0:
         print('Nan at {} pixels'.format(np.isnan(reconmap[pix]).sum()))
         pix = pix[~np.isnan(reconmap[pix])]
         
     residual = reconmap[pix] - sfdmap[pix]
     mean, std = np.mean(residual), np.std(residual)
-    print('Mean = {:.3f} Std = {:.3f}'.format(mean, std))
+    if printout:
+        print('Mean = {:.3f} Std = {:.3f}'.format(mean, std))
+
     return mean, std
 
 def get_sfd_errorplot(reconmap, sfdmap, pix, args):
@@ -396,3 +421,56 @@ def get_binned_meanstar_properties(testbed, Nsideresol, fieldlist, STARFILE= '/n
         if tile%100==0:
             print('{} Pix16 done'.format(tile))
     return np.hstack(maskpix), maps
+
+#Testbeds.py related plots
+
+def plot_noise_vs_latitude(plot_map_names, latwise_offsets, kwargs):
+    '''
+    :param plot_map_names: Names of the maps for the plot
+    :param latwise_offsets: List of outputs of MapComparisons.get_sfd_offset_noise_for_patches
+    :return:
+    '''
+
+    plt.figure()
+    cycle = ['b', 'k'] #plt.rcParams['axes.prop_cycle'].by_key()['color']
+    for il, latlist in enumerate(latwise_offsets):
+        assert len(latlist) == len(plot_map_names)
+        for m, mapwiseoffsets in enumerate(latlist):
+            offset_dict = mapwiseoffsets[1]
+            lat_value = int(offset_dict['set_name'][offset_dict['set_name'].rindex('~')+1:])
+            offset_std = offset_dict['Offset_std']
+            if il==0:
+                plt.scatter(np.ones(len(offset_std))*lat_value, offset_std, label=plot_map_names[m], s=1, c=cycle[m])
+            else:
+                plt.scatter(np.ones(len(offset_std)) * lat_value, offset_std, s=1, c=cycle[m])
+    plt.legend()
+    plt.xlabel('Latitude')
+    plt.ylabel(r'$\sigma$(Map - SFD)')
+    plt.title('Std of Map- SFD in Nside=32 pixels in a given region')
+    if 'savefig' in kwargs.keys():
+        plt.savefig(kwargs['savefig'])
+    plt.show()
+    return
+
+
+def plot_z_scores_vs_region(plot_map_names, mapwise_zscores, kwargs):
+    '''
+    :param mapwise_zscores: Output of get_zscores_for_patches
+    :return:
+    '''
+    plt.figure()
+    region_name = mapwise_zscores[0][1]['set_name']
+    for m, mapwise_zscore_tup in enumerate(mapwise_zscores):
+        mapwise_zscore = mapwise_zscore_tup[1]
+        assert mapwise_zscore['combined'] #assuming not a list of patches
+        assert mapwise_zscore['set_name'] == region_name #making sure the same region? better way to do this?
+        plt.hist(mapwise_zscore['z-scores'], bins=20, label=plot_map_names[m], alpha=0.5, density=True)
+    plt.xlabel(r'$\frac{Map - SFD}{\sigma(Map)}$')
+    plt.title('\'Z-Score\' distribution for pixels in {}'.format(region_name))
+    if 'savefig' in kwargs.keys():
+        plt.savefig(kwargs['savefig'])
+    plt.legend()
+    plt.show()
+    return
+
+
