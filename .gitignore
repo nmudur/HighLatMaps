@@ -33,3 +33,6 @@ notebooks_main1/2_17_Posteriors.ipynb
 *.ipynb_checkpoints*
 *~*
 *__pycache__*
+
+#Exceptions to save
+!notebooks_test/11_20_presave_Bayestar2017.ipynb
