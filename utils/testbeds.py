@@ -35,10 +35,10 @@ def get_pixels_in_Bayestar_footprint(Nside):
             covered_tiles.append(tile)
     return np.array(covered_tiles)
 
-def get_subset_pixels_at_latitude(Nsidetile, tile_set, latitude, Numoutput):
+def get_subset_pixels_at_latitude(Nsidetile, tile_set, latitude, Numoutput='max'):
     '''
     :param Nsidetile:
-    :param tile_set: set of pixels at Nsidetile. eg: output of get_pixels_in_Bayestar_footprint
+    :param tile_set: set of 'allowed' pixels at Nsidetile. eg: output of get_pixels_in_Bayestar_footprint
     :param latitude: input latitude
     #for absolute just run twice and concatenate
     :param Numoutput: Number of pixels to return at that latitude
@@ -46,17 +46,23 @@ def get_subset_pixels_at_latitude(Nsidetile, tile_set, latitude, Numoutput):
     '''
     lats = hp.pix2ang(Nsidetile, tile_set, lonlat=True)[1]
     diff = np.abs(lats - latitude)
-    closestmask = (diff == np.min(diff)) #pixels from the set that are nearest to the input latitude
-    assert np.sum(closestmask)>=Numoutput #possible pixels are more than the number of pixels you wanna return
+    #pixels from the set that are nearest to the input latitude
+    closestmask = (diff == np.min(diff))
     closest_pixels = tile_set[closestmask]
-    #sorted longitudes
+    #sorted longitude-wise
     closest_pixels_sorted = closest_pixels[np.argsort(hp.pix2ang(Nsidetile, closest_pixels, lonlat=True)[0])]
-    output_subset = closest_pixels_sorted[np.linspace(0, len(closest_pixels_sorted)-1, Numoutput+1).astype('int')][:-1]
-    #dont include the 360'th degree longitude since that's next to 0 -- so query one extra
+    if Numoutput=='max':
+        output_subset = closest_pixels_sorted
+    else:
+        assert isinstance(Numoutput, int)
+        assert np.sum(closestmask)>=Numoutput #possible pixels are more than the number of pixels you wanna return
+        #pick Numoutput pixels with equal distribution in longitude
+        output_subset = closest_pixels_sorted[np.linspace(0, len(closest_pixels_sorted)-1, Numoutput+1).astype('int')][1:]
+    #dont include the 360'th degree longitude since that's next to 0 -- so query one extra and leave the last one out
     return output_subset
 
 
-def get_testbeds_latitudewise(latitude, footprint, Numoutput=4, Nresol=2048):
+def get_testbeds_latitudewise(latitude, footprint, Numoutput, Nresol=2048):
     '''
     :param latitude:
     :param footprint: footprint function
@@ -67,6 +73,7 @@ def get_testbeds_latitudewise(latitude, footprint, Numoutput=4, Nresol=2048):
     NSIDETILE = 32
     footprint_tiles = get_pixels_in_Bayestar_footprint(NSIDETILE)
     tiles = get_subset_pixels_at_latitude(NSIDETILE, footprint_tiles, latitude, Numoutput)
+    assert len(tiles)==np.unique(len(tiles)) #make sure no duplicate patches
     output = []
     for tile in tiles:
         output.append({'tile': tile, 'coords': get_smallpix_in_tilepix(NSIDETILE, tile, 2048), 'lonlat': hp.pix2ang(NSIDETILE, tile, lonlat=True), 'Nsideresol': Nresol})
@@ -74,6 +81,57 @@ def get_testbeds_latitudewise(latitude, footprint, Numoutput=4, Nresol=2048):
     output_dict.update({'patches': output})
     return output_dict
 
+def get_testbeds_stellardensitywise(stdensity_bins, Nsidetile, tiles, tilewise_binid, tilesperbin='max', Nresol=2048):
+    '''
+    :param stdensity_bins: Array with the lower and upper bounds of the bins
+        len(stdensity_bins) = numbins-1
+    :param Nsidetile: Nside of the pixels in tiles
+    :param tiles: Nside=32 pixels
+    :param tilewise_binid: Bin assignment corresponding to stdensity_bins for each tile in tiles
+    :param tilesperbin: Number of Nside=32 pixel to assign to each stellar density bin
+    :param Nresol:
+    :return: List of length (stdensity bins) of dicts of the same format as get_testbeds_latitudewise
+    eg:
+    bin_id = np.digitize(numstars_postcuts, bins)
+    stdensity_bins : bins
+    tilewise_binid : bin_id
+    '''
+    assert len(tiles) == len(tilewise_binid)
+    unibins, counts = np.unique(tilewise_binid, return_counts=True)
+    assert np.min(counts)>tilesperbin
+    assert len(unibins) == len(stdensity_bins) + 1
+
+    testbedlist = []
+    stdensity_bins = np.append(stdensity_bins, np.inf) #upp limit of last bin
+    for ist, stbin in enumerate(stdensity_bins):
+        stdict = {'set_name': 'StBinUpp={}'.format(stbin), 'Nsidetile': Nsidetile, 'Nsideresol': Nresol}
+        stmask = (tilewise_binid==ist)
+        tiles_in_bin = tiles[stmask]
+        
+        if isinstance(tilesperbin, int):
+            rng = np.random.default_rng(seed=100)
+            maskout = rng.choice(len(tiles_in_bin), tilesperbin,replace=False)
+            tiles_in_bin = tiles_in_bin[maskout]
+            assert len(tiles_in_bin) == len(np.unique(tiles_in_bin))
+        #else take all
+        output = []
+        for tile in tiles_in_bin:
+            output.append({'tile': tile, 'coords': get_smallpix_in_tilepix(Nsidetile, tile, 2048), 'lonlat': hp.pix2ang(Nsidetile, tile, lonlat=True), 'Nsideresol': Nresol})
+        stdict.update({'patches': output})
+        testbedlist.append(stdict)
+    return testbedlist
+
+def check_assignment(numstars_postcuts, bin_id, bins):
+    assert len(numstars_postcuts) == len(bin_id)
+    assert len(np.unique(bin_id)) == len(bins)+1
+    bins = np.append(bins, np.inf)
+    print(bins)
+    for ib, stbin in enumerate(bins):
+        relmask = (bin_id==ib)
+        assert np.all(numstars_postcuts[relmask]<stbin), stbin
+        if ib>0:
+            assert np.all(numstars_postcuts[relmask]>=bins[ib-1])
+    return
 
 class MapComparisons():
     def __init__(self, compmaps, Nsideresol=2048):
@@ -108,12 +166,13 @@ class MapComparisons():
                 mname, meanmap = mtuple
             print(mname)
             resdict = {'set_name': testbed_set['set_name']} #separate result for each map
-            print(testbed_set['set_name'])
+            
             offset_for_each_patch = []
             patches = testbed_set['patches'] #list
+            print(testbed_set['set_name'], len(patches))
             offset_mean, offset_std = [], []
             for patch in patches: #patch = Nside=32 pixel in the testbed
-                mean, std = get_sfd_error(meanmap, self.sfdmap, patch['coords'], printout=True)
+                mean, std = get_sfd_error(meanmap, self.sfdmap, patch['coords'], printout=False)
                 offset_mean.append(mean)
                 offset_std.append(std)
             resdict.update({'Offset_mean': np.array(offset_mean), 'Offset_std': np.array(offset_std)})

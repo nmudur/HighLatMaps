@@ -168,6 +168,38 @@ def get_acc_all_intg_nside2048_batch(dustmaps_val,maskingname,device="cpu",dtype
     result.update(info) #bug?
     return result
 
+def get_acc_all_intg_nside2048_batch_debugmask(dustmaps_val,maskingname, iz, device="cpu",dtype=torch.float64):
+    """
+    Returns weight[iz, :]*dustmaps_val_torch (elemwise product): length Npix(2048)
+    
+    dustmaps_vals, (N_maps,n_pixels), where N_maps is the number of maps fed in and n_pixels are the values corresponsing to the nside=2048 indices in this masking name
+    maskingname, str, name of mask to apply. One of ["NGC","FULL","South","North"]
+    n_bootstrap int, number of bootstrap samples used, None uses the maximum amount(currently 10)
+    device: device to compute on "cpu" recommended
+    dtype: dtype used torch.float64 recommended
+    
+    """
+    assert maskingname in maskingnames, maskingname+" is not an option"
+    
+    n_maps=len(dustmaps_val)
+    assert np.isnan(dustmaps_val).sum()==0,"Nan found in map region"
+    dustmaps_val_torch=torch.tensor(dustmaps_val,device=device,dtype=dtype)
+    dustmaps_val_torch=dustmaps_val_torch-dustmaps_val_torch.mean(1,keepdim=True)
+    dustmaps_val_torch=dustmaps_val_torch #(N_maps, npixels)
+
+    st=time.time()
+    gc.collect()
+    fn=os.path.join(weights_dir,"all_intg_"+maskingname+".asdf")
+    with asdf.open(fn) as f:
+        weight=f.tree["weight"]
+        weight=np.array(weight)
+    weight_z=torch.tensor(weight,device=device,dtype=dtype)[iz, :].reshape((1, -1)) #(1, npixels)
+    acc= torch.mul(weight_z, dustmaps_val_torch) #Nmaps, npixels
+    accs=acc.cpu().detach().numpy().transpose(1,0)
+    result={"accs":accs}
+    result.update(info) #bug?
+    return result
+
 def get_rot_ind(nside,ang):
     assert ang in [0,90,180,270]
     npix=hp.nside2npix(nside)
@@ -280,3 +312,60 @@ def preproc_get_acc_intgn(maps, names, reconpix, maskingname, smooths, savname, 
             savdict = {'accs_all':accs_all, 'names': names_aug, 'reconpix': reconpix, 'maskingname': maskingname, 'error_args': error_args, 'smooths': smooths}
             pickle.dump(savdict, open(savname+'_acc_intgn.pkl', 'wb'))
     return accs_all
+
+
+
+def preproc_get_acc_intgn_debugmask(maps, names, reconpix, maskingname, smooths, savname, izarray,
+                         save_smoothed=True, save_acc_intgn=True):
+    '''
+    maps: [sfdmap, b17map, reconmap] list of maps wiht hp.nside2npix(2048) length
+    reconpix: pixels at which the map is reconstructed
+    maskingname = "NGC"
+    smooths = [30]. No rots here. For evaluating the ACC of an input map, only 0 is needed. Fixed.
+    savname:
+    izarray: which redshift INDICES to look at the mask at: each element in izarray is an index from zarray
+    
+    returns: 
+    List of lists for each input map, iz
+        if errortype=='Rot':
+        (mapname, acc_intg_result for the input, mean_ensemble, median_ensemble, error_ensemble)
+    Saves in a dictionary if save_acc_intgn=True
+    
+    '''
+    assert all([len(m)==hp.nside2npix(2048) for m in maps])
+    indices=get_masking_indices(maskingname)
+    dustmaps_val = []
+    names_aug = []
+    for ifm,fullmap in enumerate(maps):
+        dustmap=np.full(hp.nside2npix(2048),np.nan)
+        dustmap[reconpix]=fullmap[reconpix]
+        dustmaps_sm_rot= smooth_rotate_map(dustmap,arcmins=smooths,rots=[0]) #(N_sm, Npix2048)
+        for ism, smooth in enumerate(smooths):
+            dustmaps_val.append(dustmaps_sm_rot[ism, :])
+            names_aug.append(names[ifm]+'_sm{}'.format(smooth))
+            
+    
+    if not os.path.exists(savname[:savname.rindex('/')+1]):
+        os.mkdir(savname[:savname.rindex('/')+1])
+    
+    if save_smoothed:
+        pickle.dump(dustmaps_val, open(savname+'_smoothed.pkl', 'wb'))
+    
+    debugmask_mapwise = []
+    for idx, dustmap in enumerate(dustmaps_val):
+        assert len(dustmap.shape)==1
+        '''
+        accerrs_batch = []
+        for b, rot_batch in enumerate(np.array_split(error_args['rot_angles'], error_args['rot_batches'])):
+            rotatedmaps = np.stack([rotate_map(dustmap, err_angle) for err_angle in rot_batch]) #Error_angs, Npix
+            accerrs_batch.append(get_acc_all_intg_nside2048_batch(rotatedmaps[:, indices], maskingname, device="cpu")) #acc: Error_angs, z
+            del rotatedmaps
+        '''
+        zwise_weights = []
+        for iz in izarray:
+            zwise_weights.append(get_acc_all_intg_nside2048_batch_debugmask(dustmap[indices].reshape((1, -1)), maskingname, iz, device="cpu"))
+        debugmask_mapwise.append((names_aug[idx], zwise_weights)) #edited
+    if save_acc_intgn:
+        savdict = {'debug_masks_mapwise': debugmask_mapwise, 'names': names_aug, 'reconpix': reconpix, 'maskingname': maskingname, 'smooths': smooths}
+        pickle.dump(savdict, open(savname+'_debugmask.pkl', 'wb'))
+    return debugmask_mapwise

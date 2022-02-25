@@ -431,7 +431,7 @@ def plot_noise_vs_latitude(plot_map_names, latwise_offsets, kwargs):
     :return:
     '''
 
-    plt.figure()
+    plt.figure(**kwargs)
     cycle = ['b', 'k'] #plt.rcParams['axes.prop_cycle'].by_key()['color']
     for il, latlist in enumerate(latwise_offsets):
         assert len(latlist) == len(plot_map_names)
@@ -453,6 +453,37 @@ def plot_noise_vs_latitude(plot_map_names, latwise_offsets, kwargs):
     return
 
 
+def plot_noise_vs_stellardensity(plot_map_names, starwise_offsets, kwargs):
+    '''
+    :param plot_map_names: Names of the maps for the plot
+    :param starwise_offsets: List of outputs of MapComparisons.get_sfd_offset_noise_for_patches
+    :return:
+    '''
+
+    plt.figure(**kwargs)
+    cycle = ['b', 'k'] #plt.rcParams['axes.prop_cycle'].by_key()['color']
+    for il, binlist in enumerate(starwise_offsets):
+        assert len(binlist) == len(plot_map_names)
+        for m, mapwiseoffsets in enumerate(binlist):
+            offset_dict = mapwiseoffsets[1]
+            if np.isinf(float(offset_dict['set_name'][offset_dict['set_name'].rindex('=')+1:])):
+                bin_value = 4e4
+            else:
+                bin_value = int(float(offset_dict['set_name'][offset_dict['set_name'].rindex('=')+1:]))
+            offset_std = offset_dict['Offset_std']
+            if il==0:
+                plt.scatter(np.ones(len(offset_std))*bin_value, offset_std, label=plot_map_names[m], s=1, c=cycle[m])
+            else:
+                plt.scatter(np.ones(len(offset_std)) * bin_value, offset_std, s=1, c=cycle[m])
+    plt.legend()
+    plt.xlabel('Upper bound on stars per Nside=32 pixel')
+    plt.ylabel(r'$\sigma$(Map - SFD)')
+    plt.title('Std of Map- SFD in Nside=32 pixels in a given region')
+    if 'savefig' in kwargs.keys():
+        plt.savefig(kwargs['savefig'])
+    plt.show()
+    return
+
 def plot_z_scores_vs_region(plot_map_names, mapwise_zscores, kwargs):
     '''
     :param mapwise_zscores: Output of get_zscores_for_patches
@@ -465,6 +496,8 @@ def plot_z_scores_vs_region(plot_map_names, mapwise_zscores, kwargs):
         assert mapwise_zscore['combined'] #assuming not a list of patches
         assert mapwise_zscore['set_name'] == region_name #making sure the same region? better way to do this?
         plt.hist(mapwise_zscore['z-scores'], bins=20, label=plot_map_names[m], alpha=0.5, density=True)
+        if 'mean/std' in kwargs.keys():
+            print('{}: Mean={:.3f}, Std={:.3f}'.format(plot_map_names[m], np.mean(mapwise_zscore['z-scores']), np.std(mapwise_zscore['z-scores'])))
     plt.xlabel(r'$\frac{Map - SFD}{\sigma(Map)}$')
     plt.title('\'Z-Score\' distribution for pixels in {}'.format(region_name))
     if 'savefig' in kwargs.keys():
