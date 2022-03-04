@@ -1,4 +1,5 @@
 import healpy as hp
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -52,13 +53,32 @@ def get_bayestar2017_map(return_sigma=False):
     else:
         return b17map
 
+    
+    
+def get_bayestar2019_map():
+    print(platform)
+    if platform=='linux':
+        bstarpath = '/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/reference_maps/'
+    else:
+        bstarpath = '../../../reference_maps/'
+    
+    with h5py.File(bstarpath+'bayestar2019.hdf5', 'r') as f:
+        b19mean = np.array(f['mean'])
+        coords_lb = np.array(f['coords_lb'])
+
+    pix2048 = hp.pixelfunc.ang2pix(2048, coords_lb[:, 0], coords_lb[:, 1], lonlat=True)
+    b19map = np.empty(hp.pixelfunc.nside2npix(2048))
+    b19map[pix2048] = b19mean
+    return b19map
+
+
 def get_sfd_map():
     pix2048 = np.arange(hp.pixelfunc.nside2npix(2048))
     selpixang = hp.pixelfunc.pix2ang(2048, pix2048, lonlat=True)
     coords = SkyCoord(l=selpixang[0] * units.deg, b=selpixang[1] * units.deg, frame='galactic')
     sfdmap = np.empty(hp.pixelfunc.nside2npix(2048))
     sfdmap[pix2048] = sfd(coords)
-    return sfdmap
+    return sfdmap #value at index p is the value of SFD queried at pixel p at Nside=2048
 
 def get_gnilc_map():
     pix2048 = np.arange(hp.pixelfunc.nside2npix(2048))
@@ -214,7 +234,19 @@ def get_testbed_dict(name, Nresol=2048):
         pix2k = coords[notnan]
         rot= [0, 90]
         xsize= 5000
+    elif name=='FullSky_Bayestar_babsgt20':
+        assert Nresol==2048
+        b17map = get_bayestar2017_map()
+        notnan = ~np.isnan(b17map)
+        coords = np.arange(hp.nside2npix(2048))
+        lbang = hp.pix2ang(2048, coords, lonlat=True)
+        latmask = (np.abs(lbang[1])>20)
+        assert len(coords) == len(b17map)
+        notnan *= latmask
+        pix2k = coords[notnan]
         
+        rot= [0, 90]
+        xsize= 5000
     else:
         raise NotImplementedError
     return {'name':name, 'coords': pix2k, 'Nresol': Nresol, 'rot': rot, 'xsize': xsize}
@@ -290,6 +322,12 @@ def plot_acc_comparison(accsref, accobjlist, cols, ref_choice=[0, 1, 2, 3], ylim
     plt.show()
     return
 
+
+def view_map_patch(Nside, selpix, rot, fullmap, xsize=500):
+    selmap = np.ones(hp.nside2npix(Nside))*hp.UNSEEN
+    selmap[selpix] = fullmap[selpix]
+    hp.gnomview(selmap, rot=rot, xsize=xsize)
+    return
 
 
 def get_sfd_error(reconmap, sfdmap, pix, printout=True):
@@ -424,86 +462,161 @@ def get_binned_meanstar_properties(testbed, Nsideresol, fieldlist, STARFILE= '/n
 
 #Testbeds.py related plots
 
-def plot_noise_vs_latitude(plot_map_names, latwise_offsets, kwargs):
+def plot_noise_vs_latitude(latwise_offsets, kwargs):
     '''
-    :param plot_map_names: Names of the maps for the plot
     :param latwise_offsets: List of outputs of MapComparisons.get_sfd_offset_noise_for_patches
+        latiwseoffsets[ilat]: output for latitude[il] and is a list of length num_compmaps. Output of get_testbeds_latitudewise
+        latiwseoffsets[ilat][imap]: offset data for latitude[il] and map[im]
     :return:
     '''
-
-    plt.figure(**kwargs)
-    cycle = ['b', 'k'] #plt.rcParams['axes.prop_cycle'].by_key()['color']
+    plot_map_names = [mapwelem[0] for mapwelem in latwise_offsets[0]]
+    figsize=kwargs['figsize'] if 'figsize' in kwargs.keys() else (6, 6)
+    
+    plt.figure(figsize=figsize)
+    cycle = ['b', 'k', 'r', 'g', 'y'] #plt.rcParams['axes.prop_cycle'].by_key()['color']
+    alpha=1
     for il, latlist in enumerate(latwise_offsets):
         assert len(latlist) == len(plot_map_names)
         for m, mapwiseoffsets in enumerate(latlist):
             offset_dict = mapwiseoffsets[1]
             lat_value = int(offset_dict['set_name'][offset_dict['set_name'].rindex('~')+1:])
             offset_std = offset_dict['Offset_std']
+            if 'errorbars' in kwargs.keys():
+                alpha=0.2
+                plt.errorbar(lat_value, np.mean(offset_std), np.std(offset_std), c=cycle[m])
+                plt.scatter(lat_value, np.mean(offset_std), marker='d', label=(plot_map_names[m] if il==0 else None), c=cycle[m])
+                
             if il==0:
-                plt.scatter(np.ones(len(offset_std))*lat_value, offset_std, label=plot_map_names[m], s=1, c=cycle[m])
+                plt.scatter(np.ones(len(offset_std))*lat_value, offset_std, s=1, label=(plot_map_names[m] if 'errorbars' not in kwargs.keys() else None), c=cycle[m], alpha=alpha)
             else:
-                plt.scatter(np.ones(len(offset_std)) * lat_value, offset_std, s=1, c=cycle[m])
-    plt.legend()
+                #assert mapnames are in the same order
+                plt.scatter(np.ones(len(offset_std)) * lat_value, offset_std, s=1, c=cycle[m], alpha=alpha)
+    
+    legnd = plt.legend()
+    legnd.legendHandles[0]._sizes = [10]
+    legnd.legendHandles[1]._sizes = [10]
+    legnd.legendHandles[2]._sizes = [10]
+    
     plt.xlabel('Latitude')
     plt.ylabel(r'$\sigma$(Map - SFD)')
     plt.title('Std of Map- SFD in Nside=32 pixels in a given region')
+    if 'ylim' in kwargs.keys():
+        plt.ylim(kwargs['ylim'])
     if 'savefig' in kwargs.keys():
         plt.savefig(kwargs['savefig'])
+    
     plt.show()
     return
 
 
-def plot_noise_vs_stellardensity(plot_map_names, starwise_offsets, kwargs):
+def plot_noise_vs_stellardensity(starwise_offsets, kwargs):
     '''
     :param plot_map_names: Names of the maps for the plot
     :param starwise_offsets: List of outputs of MapComparisons.get_sfd_offset_noise_for_patches
+        starwiseoffsets[ilat]: output for stdensity[il] and is a list of length num_compmaps. Output of get_testbeds_latitudewise
+        starwiseoffsets[ilat][imap]: offset data for stdensity[il] and map[im]
     :return:
     '''
-
-    plt.figure(**kwargs)
+    figsize=kwargs['figsize'] if 'figsize' in kwargs.keys() else (6, 6)
+    
+    fig, ax = plt.subplots(figsize=figsize)
     cycle = ['b', 'k'] #plt.rcParams['axes.prop_cycle'].by_key()['color']
+    binvals = []
     for il, binlist in enumerate(starwise_offsets):
         assert len(binlist) == len(plot_map_names)
         for m, mapwiseoffsets in enumerate(binlist):
             offset_dict = mapwiseoffsets[1]
-            if np.isinf(float(offset_dict['set_name'][offset_dict['set_name'].rindex('=')+1:])):
-                bin_value = 4e4
-            else:
-                bin_value = int(float(offset_dict['set_name'][offset_dict['set_name'].rindex('=')+1:]))
+            bin_value = int(float(offset_dict['set_name'][offset_dict['set_name'].rindex('=')+1:]))
+            if m==0:
+                binvals.append(bin_value) 
             offset_std = offset_dict['Offset_std']
             if il==0:
                 plt.scatter(np.ones(len(offset_std))*bin_value, offset_std, label=plot_map_names[m], s=1, c=cycle[m])
             else:
                 plt.scatter(np.ones(len(offset_std)) * bin_value, offset_std, s=1, c=cycle[m])
     plt.legend()
-    plt.xlabel('Upper bound on stars per Nside=32 pixel')
+    plt.xlabel('Stars per Nside=32 pixel')
     plt.ylabel(r'$\sigma$(Map - SFD)')
+    plt.xscale('log')
+    xticklabels = kwargs['labels'] if 'labels' in kwargs.keys() else binvals
+    print(xticklabels)
+    ax.set_xticks(binvals, xticklabels, rotation=90)
+    ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+
     plt.title('Std of Map- SFD in Nside=32 pixels in a given region')
     if 'savefig' in kwargs.keys():
         plt.savefig(kwargs['savefig'])
     plt.show()
     return
 
-def plot_z_scores_vs_region(plot_map_names, mapwise_zscores, kwargs):
+def plot_z_scores_vs_region(mapwise_zscores, kwargs):
     '''
     :param mapwise_zscores: Output of get_zscores_for_patches
     :return:
     '''
-    plt.figure()
+    plot_map_names = [zsc[0] for zsc in mapwise_zscores]
+    figsize=kwargs['figsize'] if 'figsize' in kwargs.keys() else (6, 6)
+    numbins = kwargs['bins'] if 'bins' in kwargs.keys() else 20
+    
+    plt.figure(figsize=figsize)
     region_name = mapwise_zscores[0][1]['set_name']
     for m, mapwise_zscore_tup in enumerate(mapwise_zscores):
         mapwise_zscore = mapwise_zscore_tup[1]
         assert mapwise_zscore['combined'] #assuming not a list of patches
         assert mapwise_zscore['set_name'] == region_name #making sure the same region? better way to do this?
-        plt.hist(mapwise_zscore['z-scores'], bins=20, label=plot_map_names[m], alpha=0.5, density=True)
+        
+        if 'peg_bins' in kwargs.keys():
+            data = mapwise_zscores[0][1]['z-scores'] if kwargs['peg_bins']=='First' else np.hstack([mapz[1]['z-scores'] for mapz in mapwise_zscores])
+            bins = np.histogram(data, bins=numbins)[1]
+            plt.hist(mapwise_zscore['z-scores'], bins=bins, label=plot_map_names[m], alpha=0.5, density=True, zorder=kwargs['zorder'][m] if 'zorder' in kwargs.keys() else None)
+        else:
+            plt.hist(mapwise_zscore['z-scores'], bins=numbins, label=plot_map_names[m], alpha=0.5, density=True, zorder=kwargs['zorder'][m] if 'zorder' in kwargs.keys() else None)
+        
         if 'mean/std' in kwargs.keys():
             print('{}: Mean={:.3f}, Std={:.3f}'.format(plot_map_names[m], np.mean(mapwise_zscore['z-scores']), np.std(mapwise_zscore['z-scores'])))
     plt.xlabel(r'$\frac{Map - SFD}{\sigma(Map)}$')
-    plt.title('\'Z-Score\' distribution for pixels in {}'.format(region_name))
+    title = kwargs['title'] if 'title' in kwargs.keys() else '\'Z-Score\' distribution for pixels in {}'.format(region_name) 
+    plt.title(title)
     if 'savefig' in kwargs.keys():
+        dpi = 100 if 'dpi' not in kwargs.keys() else kwargs['dpi']
         plt.savefig(kwargs['savefig'])
     plt.legend()
     plt.show()
     return
 
 
+def plot_noise_vs_region(mapwise_offsets, kwargs):
+    '''
+    :param mapwise_offsets: Output of MapComparisons.get_sfd_offset_noise_for_patches for ONE region
+    :return:
+    '''
+    plot_map_names = [off[0] for off in mapwise_offsets]
+    figsize=kwargs['figsize'] if 'figsize' in kwargs.keys() else (6, 6)
+    numbins = kwargs['bins'] if 'bins' in kwargs.keys() else 20
+    
+    plt.figure(figsize=figsize)
+    region_name = mapwise_offsets[0][1]['set_name']
+    
+    for m, mapwise_offset_tup in enumerate(mapwise_offsets):
+        mapwise_zscore = mapwise_zscore_tup[1] #Edited
+        assert mapwise_zscore['combined'] #assuming not a list of patches
+        assert mapwise_zscore['set_name'] == region_name #making sure the same region? better way to do this?
+        
+        if 'peg_bins' in kwargs.keys():
+            data = mapwise_zscores[0][1]['z-scores'] if kwargs['peg_bins']=='First' else np.hstack([mapz[1]['z-scores'] for mapz in mapwise_zscores])
+            bins = np.histogram(data, bins=numbins)[1]
+            plt.hist(mapwise_zscore['z-scores'], bins=bins, label=plot_map_names[m], alpha=0.5, density=True, zorder=kwargs['zorder'][m] if 'zorder' in kwargs.keys() else None)
+        else:
+            plt.hist(mapwise_zscore['z-scores'], bins=numbins, label=plot_map_names[m], alpha=0.5, density=True, zorder=kwargs['zorder'][m] if 'zorder' in kwargs.keys() else None)
+        
+        if 'mean/std' in kwargs.keys():
+            print('{}: Mean={:.3f}, Std={:.3f}'.format(plot_map_names[m], np.mean(mapwise_zscore['z-scores']), np.std(mapwise_zscore['z-scores'])))
+    plt.xlabel(r'$\frac{Map - SFD}{\sigma(Map)}$')
+    title = kwargs['title'] if 'title' in kwargs.keys() else '\'Z-Score\' distribution for pixels in {}'.format(region_name) 
+    plt.title(title)
+    if 'savefig' in kwargs.keys():
+        dpi = 100 if 'dpi' not in kwargs.keys() else kwargs['dpi']
+        plt.savefig(kwargs['savefig'])
+    plt.legend()
+    plt.show()
+    return

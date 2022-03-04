@@ -124,6 +124,24 @@ def wise_svmnondetectioncombinedcut(df, model=None):
     return wise_combined
 
 
+def wise_svmnondetectioncombinedcut_nozreq(df, model=None):
+    #more lenient, keeps the object if you have a nan in 3 ps1 bands
+    if isinstance(model, str):
+        model = joblib.load(model)
+    assert len(model.coef_[0]) == 2, print('Code below assumes two input features')
+
+    def svm_eqn(model, x_points):
+        w = model.coef_[0]
+        b = model.intercept_[0]
+        return -(w[0] / w[1]) * x_points - b / w[1]
+
+    star_svmval = df['z-W1'].to_numpy() - svm_eqn(model, df['r-i'].to_numpy())
+    star_svmcut = (star_svmval < 0)
+    star_svmcut = star_svmcut * (df['allwise.w1mpro'].to_numpy() != 0)
+    nanps1 = np.isnan(df['mag_z'].to_numpy()) + np.isnan(df['mag_i'].to_numpy()) + np.isnan(df['mag_r'].to_numpy()) #True if any of the bands are nans
+    wise_combined = np.logical_or(np.logical_or(star_svmcut, df['allwise.w1mpro'].to_numpy() == 0), nanps1)
+    return wise_combined
+
 def parallax_pm_combinedcut(df, parsigthresh, pmsigthresh):
     '''
     True if either

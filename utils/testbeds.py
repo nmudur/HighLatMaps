@@ -83,29 +83,33 @@ def get_testbeds_latitudewise(latitude, footprint, Numoutput, Nresol=2048):
 
 def get_testbeds_stellardensitywise(stdensity_bins, Nsidetile, tiles, tilewise_binid, tilesperbin='max', Nresol=2048):
     '''
-    :param stdensity_bins: Array with the lower and upper bounds of the bins
-        len(stdensity_bins) = numbins-1
+    :param stdensity_bins: Array with the lower, upper bounds of the bins (number of stars)
     :param Nsidetile: Nside of the pixels in tiles
     :param tiles: Nside=32 pixels
-    :param tilewise_binid: Bin assignment corresponding to stdensity_bins for each tile in tiles
+    :param tilewise_binid: Bin ID assignment corresponding to stdensity_bins for each tile in tiles
     :param tilesperbin: Number of Nside=32 pixel to assign to each stellar density bin
     :param Nresol:
     :return: List of length (stdensity bins) of dicts of the same format as get_testbeds_latitudewise
     eg:
     bin_id = np.digitize(numstars_postcuts, bins)
-    stdensity_bins : bins
+    binlow = np.insert(bins, np.floor(np.min(numstars_postcuts)/100)*100, 0)
+    binupp = np.append(bins, np.ceil(np.max(numstars_postcuts)/100)*100)
+    stdensity_bins : [binlow, binupp]
     tilewise_binid : bin_id
     '''
     assert len(tiles) == len(tilewise_binid)
     unibins, counts = np.unique(tilewise_binid, return_counts=True)
     assert np.min(counts)>tilesperbin
-    assert len(unibins) == len(stdensity_bins) + 1
+
+    binlow, binup = stdensity_bins[0], stdensity_bins[1]
+    binmid = (binup - binlow)/2 + binlow
+    assert len(unibins) == len(binlow) == len(binup) #as many bin ids as there are bins
 
     testbedlist = []
-    stdensity_bins = np.append(stdensity_bins, np.inf) #upp limit of last bin
-    for ist, stbin in enumerate(stdensity_bins):
-        stdict = {'set_name': 'StBinUpp={}'.format(stbin), 'Nsidetile': Nsidetile, 'Nsideresol': Nresol}
-        stmask = (tilewise_binid==ist)
+
+    for ist, stbinmid in enumerate(binmid):
+        stdict = {'set_name': 'StBinMid={}'.format(stbinmid), 'Nsidetile': Nsidetile, 'Nsideresol': Nresol, 'Bin_bnds': (binlow[ist], binup[ist])}
+        stmask = (tilewise_binid==ist) #which tiles have this bin id
         tiles_in_bin = tiles[stmask]
         
         if isinstance(tilesperbin, int):
@@ -119,18 +123,18 @@ def get_testbeds_stellardensitywise(stdensity_bins, Nsidetile, tiles, tilewise_b
             output.append({'tile': tile, 'coords': get_smallpix_in_tilepix(Nsidetile, tile, 2048), 'lonlat': hp.pix2ang(Nsidetile, tile, lonlat=True), 'Nsideresol': Nresol})
         stdict.update({'patches': output})
         testbedlist.append(stdict)
-    return testbedlist
+    return testbedlist, stdensity_bins
 
-def check_assignment(numstars_postcuts, bin_id, bins):
+
+def check_assignment(numstars_postcuts, bin_id, stdensitybins):
+    binlow, binup = stdensitybins
     assert len(numstars_postcuts) == len(bin_id)
-    assert len(np.unique(bin_id)) == len(bins)+1
-    bins = np.append(bins, np.inf)
-    print(bins)
-    for ib, stbin in enumerate(bins):
+    assert len(binlow) == len(binup) == len(np.unique(bin_id))
+
+    for ib, stbin in enumerate(binlow):
         relmask = (bin_id==ib)
-        assert np.all(numstars_postcuts[relmask]<stbin), stbin
-        if ib>0:
-            assert np.all(numstars_postcuts[relmask]>=bins[ib-1])
+        assert np.all(numstars_postcuts[relmask]>=stbin), stbin
+        assert np.all(numstars_postcuts[relmask]<binup[ib]), stbin
     return
 
 class MapComparisons():
@@ -184,6 +188,10 @@ class MapComparisons():
         '''
         :param testbed_set: Output of eg: get_testbeds_latitudewise
         :returns: the zscore of the patch relative to SFD = (recon_mean - sfd)/sigma
+        ouput: List of length NMaps
+                  output[m]: (mname, dict) for the mth map
+                    dict['z-scores']: array with the zscores of all the Nside=2048 pixels in that region COMBINED if combined=True
+                                    else, list of length Numpatches with each patch's pixels zscores in each element
         '''
         assert self.with_sigma
         mapwise_zscores = []
@@ -192,11 +200,17 @@ class MapComparisons():
             print(mname)
             resdict = {'set_name': testbed_set['set_name']} #separate result for each map
             zscores_patches = []
+            nanrecon = []
             for patch in testbed_set['patches']:
                 z_score = (meanmap[patch['coords']] - self.sfdmap[patch['coords']])/sigmamap[patch['coords']]
+                nanrecon.append(np.isnan(meanmap[patch['coords']]))
                 zscores_patches.append(z_score)
             if combined:
                 zscores_patches = np.hstack(zscores_patches)
+                nanrecon = np.hstack(nanrecon)
+                if np.sum(nanrecon)>0:
+                    zscores_patches = zscores_patches[~nanrecon]
+                    print('Nan in {} pixels'.format(np.sum(nanrecon)))
             resdict.update({'z-scores': zscores_patches, 'combined': combined})
             mapwise_zscores.append((mname, resdict))
         return mapwise_zscores
