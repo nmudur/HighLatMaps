@@ -557,65 +557,66 @@ def plot_z_scores_vs_region(mapwise_zscores, kwargs):
     plot_map_names = [zsc[0] for zsc in mapwise_zscores]
     figsize=kwargs['figsize'] if 'figsize' in kwargs.keys() else (6, 6)
     numbins = kwargs['bins'] if 'bins' in kwargs.keys() else 20
-    
-    plt.figure(figsize=figsize)
+    dpi = 100 if 'dpi' not in kwargs.keys() else kwargs['dpi']
+    #what bins?
+    if 'peg_bins' in kwargs.keys():
+        data = mapwise_zscores[0][1]['z-scores'] if kwargs['peg_bins'] == 'First' else np.hstack([mapz[1]['z-scores'] for mapz in mapwise_zscores])
+        bins = np.histogram(data, bins=numbins)[1]
+    else:
+        bins=numbins
+
+    plt.figure(figsize=figsize, dpi = dpi)
     region_name = mapwise_zscores[0][1]['set_name']
     for m, mapwise_zscore_tup in enumerate(mapwise_zscores):
         mapwise_zscore = mapwise_zscore_tup[1]
         assert mapwise_zscore['combined'] #assuming not a list of patches
         assert mapwise_zscore['set_name'] == region_name #making sure the same region? better way to do this?
-        
-        if 'peg_bins' in kwargs.keys():
-            data = mapwise_zscores[0][1]['z-scores'] if kwargs['peg_bins']=='First' else np.hstack([mapz[1]['z-scores'] for mapz in mapwise_zscores])
-            bins = np.histogram(data, bins=numbins)[1]
-            plt.hist(mapwise_zscore['z-scores'], bins=bins, label=plot_map_names[m], alpha=0.5, density=True, zorder=kwargs['zorder'][m] if 'zorder' in kwargs.keys() else None)
-        else:
-            plt.hist(mapwise_zscore['z-scores'], bins=numbins, label=plot_map_names[m], alpha=0.5, density=True, zorder=kwargs['zorder'][m] if 'zorder' in kwargs.keys() else None)
-        
+
+        plt.hist(mapwise_zscore['z-scores'], bins=bins, label=plot_map_names[m], alpha=0.5, density=True, zorder=kwargs['zorder'][m] if 'zorder' in kwargs.keys() else None)
+
         if 'mean/std' in kwargs.keys():
             print('{}: Mean={:.3f}, Std={:.3f}'.format(plot_map_names[m], np.mean(mapwise_zscore['z-scores']), np.std(mapwise_zscore['z-scores'])))
     plt.xlabel(r'$\frac{Map - SFD}{\sigma(Map)}$')
     title = kwargs['title'] if 'title' in kwargs.keys() else '\'Z-Score\' distribution for pixels in {}'.format(region_name) 
     plt.title(title)
     if 'savefig' in kwargs.keys():
-        dpi = 100 if 'dpi' not in kwargs.keys() else kwargs['dpi']
         plt.savefig(kwargs['savefig'])
     plt.legend()
     plt.show()
     return
 
 
-def plot_noise_vs_region(mapwise_offsets, kwargs):
+def plot_noise_vs_region(combined_offset_noise_for_patches, kwargs):
     '''
-    :param mapwise_offsets: Output of MapComparisons.get_sfd_offset_noise_for_patches for ONE region
+    :param mapwise_offsets: Output of MapComparisons.get_sfd_offset_noise_for_patches_combined for ONE input region
     :return:
     '''
-    plot_map_names = [off[0] for off in mapwise_offsets]
+
+    region_name = combined_offset_noise_for_patches['set_name']
+    mapreslist = combined_offset_noise_for_patches['mapwise_offset']
+    plot_map_names = [mtup[0] for mtup in mapreslist]
+    mapwise_offsets = [mtup[1] for mtup in mapreslist] #list of arrays for each map. Each array element corresponds to the offset for the map in that pixel
+
     figsize=kwargs['figsize'] if 'figsize' in kwargs.keys() else (6, 6)
+    dpi = 100 if 'dpi' not in kwargs.keys() else kwargs['dpi']
     numbins = kwargs['bins'] if 'bins' in kwargs.keys() else 20
+
+    #what bins to use
+    if 'peg_bins' in kwargs.keys():
+        data = mapwise_offsets[0] if kwargs['peg_bins'] == 'First' else np.hstack([mapoff for mapoff in mapwise_offsets])
+        bins = np.histogram(data, bins=numbins)[1]
+    else:
+        bins = numbins
     
-    plt.figure(figsize=figsize)
-    region_name = mapwise_offsets[0][1]['set_name']
-    
-    for m, mapwise_offset_tup in enumerate(mapwise_offsets):
-        mapwise_zscore = mapwise_zscore_tup[1] #Edited
-        assert mapwise_zscore['combined'] #assuming not a list of patches
-        assert mapwise_zscore['set_name'] == region_name #making sure the same region? better way to do this?
-        
-        if 'peg_bins' in kwargs.keys():
-            data = mapwise_zscores[0][1]['z-scores'] if kwargs['peg_bins']=='First' else np.hstack([mapz[1]['z-scores'] for mapz in mapwise_zscores])
-            bins = np.histogram(data, bins=numbins)[1]
-            plt.hist(mapwise_zscore['z-scores'], bins=bins, label=plot_map_names[m], alpha=0.5, density=True, zorder=kwargs['zorder'][m] if 'zorder' in kwargs.keys() else None)
-        else:
-            plt.hist(mapwise_zscore['z-scores'], bins=numbins, label=plot_map_names[m], alpha=0.5, density=True, zorder=kwargs['zorder'][m] if 'zorder' in kwargs.keys() else None)
-        
+    plt.figure(figsize=figsize, dpi=dpi)
+    for m, mapwise_offset in enumerate(mapwise_offsets):
+        plt.hist(mapwise_offset, bins=bins, label=plot_map_names[m], alpha=0.5, density=True, zorder=kwargs['zorder'][m] if 'zorder' in kwargs.keys() else None)
         if 'mean/std' in kwargs.keys():
-            print('{}: Mean={:.3f}, Std={:.3f}'.format(plot_map_names[m], np.mean(mapwise_zscore['z-scores']), np.std(mapwise_zscore['z-scores'])))
-    plt.xlabel(r'$\frac{Map - SFD}{\sigma(Map)}$')
-    title = kwargs['title'] if 'title' in kwargs.keys() else '\'Z-Score\' distribution for pixels in {}'.format(region_name) 
+            print('{}: Mean={:.3f}, Std={:.3f}'.format(plot_map_names[m], np.mean(mapwise_offset), np.std(mapwise_offset)))
+    plt.xlabel('Map - SFD')
+    title = kwargs['title'] if 'title' in kwargs.keys() else 'Offset distribution for pixels in {}'.format(region_name)
     plt.title(title)
     if 'savefig' in kwargs.keys():
-        dpi = 100 if 'dpi' not in kwargs.keys() else kwargs['dpi']
         plt.savefig(kwargs['savefig'])
     plt.legend()
     plt.show()

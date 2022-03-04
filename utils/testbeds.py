@@ -153,13 +153,19 @@ class MapComparisons():
         self.with_sigma = True if len(self.maps[0])==3 else False #flag on whether the loaded maps have sigmas
 
         for im, mtup in enumerate(self.maps):
-            assert len(mtup[1])==hp.nside2npix(Nsideresol)
+            assert len(mtup[1])==hp.nside2npix(Nsideresol) #ensures all maps are at Nside=2048
             assert len(mtup)==3 if self.with_sigma else 2 #ensures all maps either do or dont have uncertainties
 
     def get_sfd_offset_noise_for_patches(self, testbed_set):
         '''
         :param testbed_set: Output of eg: get_testbeds_latitudewise
+        For each patch (typically an Nside=32 pixel) in the region, calculates the mean and std {recon[pix] - sfd[pix]}
+            where pix is the set of Nside=2048 pixels lying in that patch
         :return: List of length number of maps
+            output[im] = (mname, resdict) for the imth map
+                resdict: 'set_name': Name of the region (collection of Nside=32 pixels)
+                        'offset_mean': Length: Number of patches in region. Mean of the pixelwise offsets in each patch
+                        'offset_std': Length: Number of patches in region. Std of the pixelwise offsets in each patch
         '''
         mapwise_sfd_offsets = [] #list of length len(self.maps)
 
@@ -170,8 +176,7 @@ class MapComparisons():
                 mname, meanmap = mtuple
             print(mname)
             resdict = {'set_name': testbed_set['set_name']} #separate result for each map
-            
-            offset_for_each_patch = []
+
             patches = testbed_set['patches'] #list
             print(testbed_set['set_name'], len(patches))
             offset_mean, offset_std = [], []
@@ -183,6 +188,40 @@ class MapComparisons():
             mapwise_sfd_offsets.append((mname, resdict))
         return mapwise_sfd_offsets
 
+    def get_sfd_offset_noise_for_patches_combined(self, testbed_set):
+        '''
+        :param testbed_set: Output of eg: get_testbeds_latitudewise
+        For each patch (typically an Nside=32 pixel) in the region, calculates the mean and std {recon[pix] - sfd[pix]}
+            where pix is the set of Nside=2048 pixels lying in that patch
+        :return: NOTE: DIFFERENT OUTPUT FORMAT FROM ABOVE.
+        Dictionary with:
+            'set_name': Name of the region (collection of Nside=32 pixels)
+            'mapwise_offset': List of length number of maps
+                output['mapwise_offset'][m]: is a tuple:
+                        0: Mpaname
+                        1: Array of length |combined_pixels| and map[m][pix] - sfdmap[pix]
+        '''
+        mapwise_sfd_offsets = []  # list of length len(self.maps)
+        resdict = {'set_name': testbed_set['set_name']}  #single dictionary output
+        #extract all the pixels for the patches contained in region
+        patches = testbed_set['patches']  # list
+        print(testbed_set['set_name'], len(patches))
+        combined_pixels = []
+
+        for patch in patches:  # patch = Nside=32 pixel in the testbed
+            combined_pixels.append(patch['coords'])
+        combined_pixels = np.hstack(combined_pixels)
+
+        for mtuple in self.maps:
+            if self.with_sigma:
+                mname, meanmap, sigmamap = mtuple
+            else:
+                mname, meanmap = mtuple
+            print(mname)
+
+            mapwise_sfd_offsets.append((mname, meanmap[combined_pixels] - self.sfdmap[combined_pixels]))
+        resdict.update({'mapwise_offset': mapwise_sfd_offsets})
+        return resdict
 
     def get_z_scores_for_patches(self, testbed_set, combined=False):
         '''
@@ -246,7 +285,7 @@ if __name__=='__main__':
         latwise_offsets.append(mapcomp.get_sfd_offset_noise_for_patches(patches))
     plot_noise_vs_latitude(['Bayestar2017', '16a'], latwise_offsets, {})
     '''
-
+    '''
     #Plotting zscores for different maps for a SINGLE latitude
     b17map, b17sigmamap = get_bayestar2017_map(return_sigma=True)
     recondict = pickle.load(open('../reconmaps/16a_fwhm-6-1__bgt21.pkl', 'rb'))
@@ -262,6 +301,21 @@ if __name__=='__main__':
     for lat in latrange:
         patches = get_testbeds_latitudewise(lat, get_pixels_in_Bayestar_footprint, Numoutput=10, Nresol=2048)
         zscores = mapcomp.get_z_scores_for_patches(patches, combined=True)
-        plot_z_scores_vs_region(['B17', '16a'], zscores, {})
-    print(32)
+        plot_z_scores_vs_region(zscores, {})
+    '''
 
+    b17map, b17sigmamap = get_bayestar2017_map(return_sigma=True)
+    recondict = pickle.load(open('../reconmaps/16a_fwhm-6-1__bgt21.pkl', 'rb'))
+    recon16a = recondict['dustmap']
+    sigmamap = np.sqrt(recondict['variancemap'])  # check if issues here
+
+    compmaps = [('B17', b17map, b17sigmamap), ('FWHM=6.1\'', recon16a, sigmamap)]
+
+    mapcomp = MapComparisons(compmaps)
+    latrange = np.arange(30, 100, 10).astype('int')
+    latrange = np.insert(latrange, 0, 25)
+    latwise_offsets = []
+    for lat in latrange:
+        patches = get_testbeds_latitudewise(lat, get_pixels_in_Bayestar_footprint, Numoutput='max', Nresol=2048)
+        offsets = mapcomp.get_sfd_offset_noise_for_patches_combined(patches)
+        plot_noise_vs_region(offsets, {'dpi': 100, 'bins': 30})
