@@ -35,6 +35,27 @@ def get_pixels_in_Bayestar_footprint(Nside):
             covered_tiles.append(tile)
     return np.array(covered_tiles)
 
+def get_pixels_in_recon61xbayestar_footprint(Nside):
+    b17map = get_bayestar2017_map()
+    nbmaindir = '/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/notebooks_main1/'
+    footprint = pickle.load(open(nbmaindir+'fullsky_runs/footprints/ftp_minimal_3_12.pkl', 'rb'))
+    #selects only pixels at Nside that are completely contained in the Recon61 footprint
+    fptpixels = footprint['pixels']
+    fptpixels = fptpixels[~np.isnan(b17map[fptpixels])]
+    #selects only pixels at Nside that are ALSO completely contained in the B17 footprint
+    if Nside==2048:
+        return fptpixels
+    else:
+        tiles_all = np.arange(hp.nside2npix(Nside))
+        exclusionmask = ~np.isin(np.arange(hp.nside2npix(2048)), fptpixels)
+        covered_tiles= []
+        for tile in tiles_all:
+            pix_in_tile = get_smallpix_in_tilepix(Nside, tile, 2048)
+            if np.sum(exclusionmask[pix_in_tile])==0:
+                covered_tiles.append(tile)
+    return np.array(covered_tiles)
+
+
 def get_subset_pixels_at_latitude(Nsidetile, tile_set, latitude, Numoutput='max'):
     '''
     :param Nsidetile:
@@ -71,7 +92,7 @@ def get_testbeds_latitudewise(latitude, footprint, Numoutput, Nresol=2048):
     '''
     assert Nresol==2048 #for now since all the footprints are defined in terms of 2048
     NSIDETILE = 32
-    footprint_tiles = get_pixels_in_Bayestar_footprint(NSIDETILE)
+    footprint_tiles = footprint(NSIDETILE)
     tiles = get_subset_pixels_at_latitude(NSIDETILE, footprint_tiles, latitude, Numoutput)
     assert len(tiles)==np.unique(len(tiles)) #make sure no duplicate patches
     output = []
@@ -136,6 +157,72 @@ def check_assignment(numstars_postcuts, bin_id, stdensitybins):
         assert np.all(numstars_postcuts[relmask]>=stbin), stbin
         assert np.all(numstars_postcuts[relmask]<binup[ib]), stbin
     return
+
+
+def get_testbed_dict(name, Nresol=2048):
+    if name=='Perseus':
+        pl, pb = np.array([157.5, 161.5, 161.5, 157.5]), np.array([-22, -22, -16, -16])
+        pverts = hp.ang2vec(pl, pb, lonlat=True)
+        pix2k = hp.query_polygon(Nresol, pverts, inclusive=True)
+        rot, xsize = [159.5, -19], 300
+    elif name=='Ursa Major':
+        pl, pb = np.array([140, 162, 162, 140]), np.array([32, 32, 44, 44])
+        pverts = hp.ang2vec(pl, pb, lonlat=True)
+        pix2k = hp.query_polygon(Nresol, pverts, inclusive=True)
+        rot, xsize = [151, 38], 800
+    elif name=='Polaris':
+        pl, pb = np.array([119, 128, 128, 119]), np.array([22, 22, 34, 34])
+        pverts = hp.ang2vec(pl, pb, lonlat=True)
+        pix2k = hp.query_polygon(Nresol, pverts, inclusive=True)
+        rot, xsize= [124, 28], 800
+    elif name=='Pegasus':
+        pl, pb = np.array([85, 100, 100, 85]), np.array([-42, -42, -28, -28])
+        pverts = hp.ang2vec(pl, pb, lonlat=True)
+        pix2k = hp.query_polygon(Nresol, pverts, inclusive=True)
+        rot, xsize= [92.5, -36], 800
+    elif name=='Stripe-Splotch':
+        tstripe4 = hp.ang2pix(4, 135, -30, lonlat=True)
+        tstripe32 = get_smallpix_in_tilepix(4, tstripe4, 32)
+        pix2k = []
+        for t32 in tstripe32:
+            pix2k.append(get_smallpix_in_tilepix(32, t32, Nresol))
+        pix2k = np.unique(np.hstack(pix2k))
+        rot, xsize= [135, -30], 1000
+    elif name=='NGC':
+        pix2k = get_tile_idx_in_circlepatch(Nresol, [0, 90], 50)
+        rot, xsize = [0, 90], 5000
+    elif name=='NGC_bgt90':
+        pix2k = get_tile_idx_in_circlepatch(Nresol, [0, 90], 10)
+        rot, xsize = [0, 90], 5000
+    elif name=='NGC_bgt35':
+        pix2k = get_tile_idx_in_circlepatch(Nresol, [0, 90], 55)
+        rot, xsize = [0, 90], 5000
+    elif name=='FullSky_Bayestar':
+        assert Nresol==2048
+        b17map = get_bayestar2017_map()
+        notnan = ~np.isnan(b17map)
+        coords = np.arange(hp.nside2npix(2048))
+        assert len(coords) == len(b17map)
+        pix2k = coords[notnan]
+        rot= [0, 90]
+        xsize= 5000
+    elif name=='FullSky_Bayestar_babsgt20':
+        assert Nresol==2048
+        b17map = get_bayestar2017_map()
+        notnan = ~np.isnan(b17map)
+        coords = np.arange(hp.nside2npix(2048))
+        lbang = hp.pix2ang(2048, coords, lonlat=True)
+        latmask = (np.abs(lbang[1])>20)
+        assert len(coords) == len(b17map)
+        notnan *= latmask
+        pix2k = coords[notnan]
+        
+        rot= [0, 90]
+        xsize= 5000
+    else:
+        raise NotImplementedError
+    return {'name':name, 'coords': pix2k, 'Nresol': Nresol, 'rot': rot, 'xsize': xsize}
+
 
 class MapComparisons():
     def __init__(self, compmaps, Nsideresol=2048):

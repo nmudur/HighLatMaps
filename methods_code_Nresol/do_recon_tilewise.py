@@ -6,6 +6,7 @@ import sys
 import psutil
 import h5py
 import pickle
+import astropy
 import time
 import functools
 import healpy as hp
@@ -20,46 +21,104 @@ import astro_cuts
 from utils_circpatch import *
 #from newcuts_11_14 import *
 
+
 def convert_to_dataframe(starfile):
-    #converts an input starfile to a dataframe
-    #adds all post-proc columns here
-    dat = Table.read(starfile, format='fits')  # for superchunk
-    names = [name for name in dat.colnames if len(dat[name].shape) <= 1]
-    df = dat[names].to_pandas()
-    df['dm_median'] = dat['percentiles_dm'][:, 1]
-    df['E_median'] = dat['percentiles_E'][:, 1]
-    df['dm_sigma'] = (dat['percentiles_dm'][:, 2] - dat['percentiles_dm'][:, 0]) / 2
-    df['E_sigma'] = (dat['percentiles_E'][:, 2] - dat['percentiles_E'][:, 0]) / 2
-    df['DiscPlx'] = np.logical_xor((np.isnan(df['plx'].to_numpy())),
-                                   (np.isnan(df['gaia_dr2_source.parallax'].to_numpy())))
-    if 'mag_err' in dat.colnames:
-        for ib, b in enumerate(['g', 'r', 'i', 'z', 'y', 'J', 'H', 'K']):
-            df['mag_'+b] = np.array(dat['mag'][:, ib])
-            df['mag_err_' + b] = np.array(dat['mag_err'][:, ib])
-        df['g-r'] = df['mag_g'].to_numpy() - df['mag_r'].to_numpy()
-        df['r-i'] = df['mag_r'].to_numpy() - df['mag_i'].to_numpy()
-        if len([c.startswith('allwise') for c in dat.colnames])>0:
-            df['z-W1'] = df['mag_z'].to_numpy() - df['allwise.w1mpro'].to_numpy()
-        n_passbands = np.count_nonzero(np.isfinite(dat['mag_err']), axis=1)
-        df['reduced_chisq'] = df['chisq'].to_numpy() * n_passbands / (n_passbands - 4)
-    
-    
-    #if sdss
-    if np.sum([c.startswith('sdss_dr14_starsweep') for c in dat.colnames])>0:
-        sdss_flux_sig = np.power(np.array(dat['sdss_dr14_starsweep.psfflux_ivar']), -0.5)
-        for ib, b in enumerate(['u', 'g', 'r', 'i', 'z']):
-            df['sdss.pmag_'+b] = 22.5 - 2.5*np.clip(np.log10(np.array(dat['sdss_dr14_starsweep.psfflux'])[:, ib]), 0.0, np.inf)
-            df['sdss.pmag_err_'+b] = (2.5/np.log(10)) * (sdss_flux_sig[:, ib]/np.array(dat['sdss_dr14_starsweep.psfflux'])[:, ib])
-    #if ucal
-    if np.sum([c.startswith('ucal_fluxqz') for c in dat.colnames])>0:
-        for ib, b in enumerate(['g', 'r', 'i', 'z', 'y']):
-            df['ps.psfmagmean_'+b] = -2.5*np.log10(np.array(dat['ucal_fluxqz.mean'][:, ib]))
-            df['ps.psfmagstdev_' + b] = (2.5/np.log(10))*(np.array(dat['ucal_fluxqz.stdev'][:, ib])/np.array(dat['ucal_fluxqz.mean'][:, ib]))
-            df['ps.apmagmean_'+b] = -2.5*np.log10(np.array(dat['ucal_fluxqz.mean_ap'][:, ib]))
-            df['ps.apmagstdev_' + b] = (2.5/np.log(10))*(np.array(dat['ucal_fluxqz.stdev_ap'][:, ib])/np.array(dat['ucal_fluxqz.mean_ap'][:, ib]))
-            df['ps.psf-apmag_'+b] = df['ps.psfmagmean_'+b].to_numpy() - df['ps.apmagmean_'+b].to_numpy()
-    
+    # converts an input starfile to a dataframe
+    # adds all post-proc columns here
+    if isinstance(starfile, list):
+        # List of (inputfile, relevant keys)
+        print('Rerun bayestar outputs')
+        dflist = []
+        for elem in starfile:
+            inputfile = h5py.File(elem[0], 'r')
+            pixels_all = elem[1]  # inputfile['photometry'].keys()
+
+            for pixel in pixels_all:
+                dat = astropy.io.misc.hdf5.read_table_hdf5(inputfile, path='photometry/{}'.format(pixel))
+
+                names = [name for name in dat.colnames if len(dat[name].shape) <= 1]  # single columns
+                df = dat[names].to_pandas()
+                rencols = {"posterior_mean_dm": "dm_median", "posterior_mean_E": "E_median",
+                           "posterior_sigma_dm": "dm_sigma",
+                           "posterior_sigma_E": "E_sigma", "pi": "plx", "pi_err": "plx_err"}
+                colnames = np.array(dat.colnames)
+                gaiacols = colnames[np.array([True if name.startswith('gaia.') else False for name in dat.colnames])]
+                rengaia = {gcol: 'gaia_edr3.' + gcol[5:] for gcol in gaiacols}
+                rencols.update(rengaia)
+                df.rename(columns=rencols, inplace=True)
+                df['DiscPlx'] = np.logical_xor((np.isnan(df['plx'].to_numpy())),
+                                               (np.isnan(df['gaia_edr3.parallax'].to_numpy())))
+                if 'err' in dat.colnames:
+                    for ib, b in enumerate(['g', 'r', 'i', 'z', 'y', 'J', 'H', 'K']):
+                        df['mag_' + b] = np.array(dat['mag'][:, ib])
+                        df['mag_err_' + b] = np.array(dat['err'][:, ib])
+                        if ib < 5:
+                            df['ps.psfmagmean_' + b] = np.array(dat['mag'][:, ib])
+                            df['ps.psfmagstdev_' + b] = np.array(dat['err'][:, ib])
+                            df['ps.apmagmean_' + b] = np.array(dat['mean_ap'][:, ib])
+                            df['ps.apmagstdev_' + b] = np.array(dat['err_ap'][:, ib])
+                            df['ps.psf-apmag_' + b] = df['ps.psfmagmean_' + b].to_numpy() - df[
+                                'ps.apmagmean_' + b].to_numpy()
+                    df['g-r'] = df['mag_g'].to_numpy() - df['mag_r'].to_numpy()
+                    df['r-i'] = df['mag_r'].to_numpy() - df['mag_i'].to_numpy()
+                    if len([c.startswith('allwise') for c in dat.colnames]) > 0:
+                        df['z-W1'] = df['mag_z'].to_numpy() - df['allwise.w1mpro'].to_numpy()
+                    n_passbands = np.count_nonzero(np.isfinite(dat['err']), axis=1)
+                    df['reduced_chisq'] = df['chisq'].to_numpy() * n_passbands / (n_passbands - 4)
+
+                # if sdss
+                if np.sum([c.startswith('sdss_dr14_starsweep') for c in dat.colnames]) > 0:
+                    sdss_flux_sig = np.power(np.array(dat['sdss_dr14_starsweep.psfflux_ivar']), -0.5)
+                    for ib, b in enumerate(['u', 'g', 'r', 'i', 'z']):
+                        df['sdss.pmag_' + b] = 22.5 - 2.5 * np.clip(
+                            np.log10(np.array(dat['sdss_dr14_starsweep.psfflux'])[:, ib]), 0.0, np.inf)
+                        df['sdss.pmag_err_' + b] = (2.5 / np.log(10)) * (
+                                sdss_flux_sig[:, ib] / np.array(dat['sdss_dr14_starsweep.psfflux'])[:, ib])
+                dflist.append(df)
+        df = pd.concat(dflist)
+
+    else:
+        dat = Table.read(starfile, format='fits')  # for superchunk
+        names = [name for name in dat.colnames if len(dat[name].shape) <= 1]
+        df = dat[names].to_pandas()
+        df['dm_median'] = dat['percentiles_dm'][:, 1]
+        df['E_median'] = dat['percentiles_E'][:, 1]
+        df['dm_sigma'] = (dat['percentiles_dm'][:, 2] - dat['percentiles_dm'][:, 0]) / 2
+        df['E_sigma'] = (dat['percentiles_E'][:, 2] - dat['percentiles_E'][:, 0]) / 2
+        df['DiscPlx'] = np.logical_xor((np.isnan(df['plx'].to_numpy())),
+                                       (np.isnan(df['gaia_dr2_source.parallax'].to_numpy())))
+        if 'mag_err' in dat.colnames:
+            for ib, b in enumerate(['g', 'r', 'i', 'z', 'y', 'J', 'H', 'K']):
+                df['mag_' + b] = np.array(dat['mag'][:, ib])
+                df['mag_err_' + b] = np.array(dat['mag_err'][:, ib])
+            df['g-r'] = df['mag_g'].to_numpy() - df['mag_r'].to_numpy()
+            df['r-i'] = df['mag_r'].to_numpy() - df['mag_i'].to_numpy()
+            if len([c.startswith('allwise') for c in dat.colnames]) > 0:
+                df['z-W1'] = df['mag_z'].to_numpy() - df['allwise.w1mpro'].to_numpy()
+            n_passbands = np.count_nonzero(np.isfinite(dat['mag_err']), axis=1)
+            df['reduced_chisq'] = df['chisq'].to_numpy() * n_passbands / (n_passbands - 4)
+
+        # if sdss
+        if np.sum([c.startswith('sdss_dr14_starsweep') for c in dat.colnames]) > 0:
+            sdss_flux_sig = np.power(np.array(dat['sdss_dr14_starsweep.psfflux_ivar']), -0.5)
+            for ib, b in enumerate(['u', 'g', 'r', 'i', 'z']):
+                df['sdss.pmag_' + b] = 22.5 - 2.5 * np.clip(
+                    np.log10(np.array(dat['sdss_dr14_starsweep.psfflux'])[:, ib]), 0.0, np.inf)
+                df['sdss.pmag_err_' + b] = (2.5 / np.log(10)) * (
+                            sdss_flux_sig[:, ib] / np.array(dat['sdss_dr14_starsweep.psfflux'])[:, ib])
+        # if ucal
+        if np.sum([c.startswith('ucal_fluxqz') for c in dat.colnames]) > 0:
+            for ib, b in enumerate(['g', 'r', 'i', 'z', 'y']):
+                df['ps.psfmagmean_' + b] = -2.5 * np.log10(np.array(dat['ucal_fluxqz.mean'][:, ib]))
+                df['ps.psfmagstdev_' + b] = (2.5 / np.log(10)) * (
+                            np.array(dat['ucal_fluxqz.stdev'][:, ib]) / np.array(dat['ucal_fluxqz.mean'][:, ib]))
+                df['ps.apmagmean_' + b] = -2.5 * np.log10(np.array(dat['ucal_fluxqz.mean_ap'][:, ib]))
+                df['ps.apmagstdev_' + b] = (2.5 / np.log(10)) * (
+                            np.array(dat['ucal_fluxqz.stdev_ap'][:, ib]) / np.array(dat['ucal_fluxqz.mean_ap'][:, ib]))
+                df['ps.psf-apmag_' + b] = df['ps.psfmagmean_' + b].to_numpy() - df['ps.apmagmean_' + b].to_numpy()
+
     return df
+
 
 
 def cuts_wrapper(starfile, nsidetile, tile, radius_deg_extra, cuts_list, coordstype='UnitVector', return_mask=False):
@@ -118,11 +177,18 @@ def get_data_for_tile(tile, Nsidetile, radius_deg_extra, cuts_list, Nsideresol, 
     region = get_pixelvec_for_tile(Nsidetile, tile, Nsideresol=Nsideresol) #[Npixresol pixels in tile] x 3
     
     print('Region for tile{}'.format(tile))
-    #stars
-    assert Nsidetile>=16
-    startile = get_largepix_for_smallpix(tile, Nsidetile, 16) #get corresponding LSD presaved file
-    starfile = presaved.format(startile)
-    stars = cuts_wrapper(starfile, nsidetile=Nsidetile, tile = tile, radius_deg_extra=radius_deg_extra, cuts_list=cuts_list, coordstype='UnitVector', return_mask=False) #basically stuff that acts on a single star file
+    if isinstance(presaved, dict):
+        #rerun format
+        starfilelist = presaved[tile]
+        stars = cuts_wrapper(starfilelist, nsidetile=Nsidetile, tile=tile, radius_deg_extra=radius_deg_extra, cuts_list=cuts_list, coordstype='UnitVector', return_mask=False)
+        #stars = np.vstack(stars_hf) stacking now done in convert_to_dataframe
+
+    else:
+        #stars
+        assert Nsidetile>=16
+        startile = get_largepix_for_smallpix(tile, Nsidetile, 16) #get corresponding LSD presaved file
+        starfile = presaved.format(startile)
+        stars = cuts_wrapper(starfile, nsidetile=Nsidetile, tile = tile, radius_deg_extra=radius_deg_extra, cuts_list=cuts_list, coordstype='UnitVector', return_mask=False) #basically stuff that acts on a single star file
     print('Tile {}, NumPixels={}, NumStars={}, Star/Pix ratio = {}'.format(tile, region.shape[0], stars.shape[0], stars.shape[0]/region.shape[0]), flush=True)
     sys.stdout.flush()
     sys.stderr.flush()

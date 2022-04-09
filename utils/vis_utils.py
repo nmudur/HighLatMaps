@@ -77,7 +77,8 @@ def get_sfd_map():
     selpixang = hp.pixelfunc.pix2ang(2048, pix2048, lonlat=True)
     coords = SkyCoord(l=selpixang[0] * units.deg, b=selpixang[1] * units.deg, frame='galactic')
     sfdmap = np.empty(hp.pixelfunc.nside2npix(2048))
-    sfdmap[pix2048] = sfd(coords)
+    sfdmap[pix2048] = 0.86*sfd(coords)
+    print('Multiplying by the blue tip correction factor of 0.86')
     return sfdmap #value at index p is the value of SFD queried at pixel p at Nside=2048
 
 def get_gnilc_map():
@@ -187,72 +188,9 @@ def get_masked_patch(fullmap, reconpix, nres=2048):
     mmap[reconpix] = fullmap[reconpix]
     return mmap
 
-def get_testbed_dict(name, Nresol=2048):
-    if name=='Perseus':
-        pl, pb = np.array([157.5, 161.5, 161.5, 157.5]), np.array([-22, -22, -16, -16])
-        pverts = hp.ang2vec(pl, pb, lonlat=True)
-        pix2k = hp.query_polygon(Nresol, pverts, inclusive=True)
-        rot, xsize = [159.5, -19], 300
-    elif name=='Ursa Major':
-        pl, pb = np.array([140, 162, 162, 140]), np.array([32, 32, 44, 44])
-        pverts = hp.ang2vec(pl, pb, lonlat=True)
-        pix2k = hp.query_polygon(Nresol, pverts, inclusive=True)
-        rot, xsize = [151, 38], 800
-    elif name=='Polaris':
-        pl, pb = np.array([119, 128, 128, 119]), np.array([22, 22, 34, 34])
-        pverts = hp.ang2vec(pl, pb, lonlat=True)
-        pix2k = hp.query_polygon(Nresol, pverts, inclusive=True)
-        rot, xsize= [124, 28], 800
-    elif name=='Pegasus':
-        pl, pb = np.array([85, 100, 100, 85]), np.array([-42, -42, -28, -28])
-        pverts = hp.ang2vec(pl, pb, lonlat=True)
-        pix2k = hp.query_polygon(Nresol, pverts, inclusive=True)
-        rot, xsize= [92.5, -36], 800
-    elif name=='Stripe-Splotch':
-        tstripe4 = hp.ang2pix(4, 135, -30, lonlat=True)
-        tstripe32 = get_smallpix_in_tilepix(4, tstripe4, 32)
-        pix2k = []
-        for t32 in tstripe32:
-            pix2k.append(get_smallpix_in_tilepix(32, t32, Nresol))
-        pix2k = np.unique(np.hstack(pix2k))
-        rot, xsize= [135, -30], 1000
-    elif name=='NGC':
-        pix2k = get_tile_idx_in_circlepatch(Nresol, [0, 90], 50)
-        rot, xsize = [0, 90], 5000
-    elif name=='NGC_bgt90':
-        pix2k = get_tile_idx_in_circlepatch(Nresol, [0, 90], 10)
-        rot, xsize = [0, 90], 5000
-    elif name=='NGC_bgt35':
-        pix2k = get_tile_idx_in_circlepatch(Nresol, [0, 90], 55)
-        rot, xsize = [0, 90], 5000
-    elif name=='FullSky_Bayestar':
-        assert Nresol==2048
-        b17map = get_bayestar2017_map()
-        notnan = ~np.isnan(b17map)
-        coords = np.arange(hp.nside2npix(2048))
-        assert len(coords) == len(b17map)
-        pix2k = coords[notnan]
-        rot= [0, 90]
-        xsize= 5000
-    elif name=='FullSky_Bayestar_babsgt20':
-        assert Nresol==2048
-        b17map = get_bayestar2017_map()
-        notnan = ~np.isnan(b17map)
-        coords = np.arange(hp.nside2npix(2048))
-        lbang = hp.pix2ang(2048, coords, lonlat=True)
-        latmask = (np.abs(lbang[1])>20)
-        assert len(coords) == len(b17map)
-        notnan *= latmask
-        pix2k = coords[notnan]
-        
-        rot= [0, 90]
-        xsize= 5000
-    else:
-        raise NotImplementedError
-    return {'name':name, 'coords': pix2k, 'Nresol': Nresol, 'rot': rot, 'xsize': xsize}
 
 
-def plot_maps_comparison(testbedlist, compmaps, norm='SFD', figsize=(20, 20)):
+def plot_maps_comparison(testbedlist, compmaps, norm='SFD', figsize=(20, 20), kwargs_dict=None):
     #cols: maps, rows: regions
     nrows, ncols = len(testbedlist), len(compmaps)
     
@@ -276,7 +214,9 @@ def plot_maps_comparison(testbedlist, compmaps, norm='SFD', figsize=(20, 20)):
             else:
                 plt.axes(ax[rix, cix])
             hp.gnomview(mtup[1], rot=testbedlist[rix]['rot'], hold=True, title=reg['name']+': '+mtup[0], xsize=testbedlist[rix]['xsize'], **pargs)
-    plt.suptitle('Comparison')
+    #plt.suptitle('Comparison')
+    if 'savefig' in kwargs_dict.keys():
+        fig.savefig(kwargs_dict['savefig'], dpi=200)
     plt.show()
     return
 
@@ -288,17 +228,31 @@ def query_at_lbcoords(lbpoint, compmaps, Nsideresol):
     return
               
 
-def plot_acc_comparison(accsref, accobjlist, cols, ref_choice=[0, 1, 2, 3], ylim=[-0.5, 0.5]):
-    plt.figure(figsize=(10,4))
+def plot_acc_comparison(accsref, accobjlist, cols, ref_choice=[0, 1, 2, 3], ylim=[-0.5, 0.5], sigcontours='Default', no_legend=False, savefig=None, title=None):
+    fig = plt.figure(figsize=(10,5))
+    '''if legendnames=='Default':
+        maplabels = [accsref[m][0] for m in range(len(accsref))]
+        for accnew in accobjlist:
+            maplabels += [accnew[m][0] for m in range(len(accnew))] #handling the case where the input has multiple maps' accs
+    else:
+        assert #number of maps to be plotted must match the number of '''
     for m in range(len(accsref)):
         if m in ref_choice:
             errens = accsref[m][-1]
             sampstd = 1000*np.sqrt(np.mean(errens**2, axis=0)) #RMSE: variability about 0
             res = 1000*accsref[m][1]['accs'].flatten()
             lb, ub = 0 - sampstd, sampstd
-            plt.fill_between(accsref[m][1]['mean_z']+1, -(2*sampstd), (2*sampstd), alpha=0.1, color=cols[m])
-            plt.fill_between(accsref[m][1]['mean_z']+1, lb, ub, alpha=0.2, color=cols[m])
+            if sigcontours=='Default': #1, 2 rms deviations
+                plt.fill_between(accsref[m][1]['mean_z']+1, -(2*sampstd), (2*sampstd), alpha=0.1, color=cols[m])
+                plt.fill_between(accsref[m][1]['mean_z']+1, lb, ub, alpha=0.2, color=cols[m])
+            else:
+                assert sorted(sigcontours)==sigcontours #asc order eg: [1, 3, 5]
+                maxalpha=0.3
+                for icont, sigfac in enumerate(sigcontours):
+                    plt.fill_between(accsref[m][1]['mean_z']+1, -(sigfac*sampstd), (sigfac*sampstd), alpha=maxalpha-(icont*0.1), color=cols[m])
             plt.plot(accsref[m][1]['mean_z']+1, res, label=accsref[m][0], color=cols[m])
+            if no_legend:
+                print(accsref[m][0])
     ctr=m+1
     if accobjlist is not None:
         for accnew in accobjlist:
@@ -307,9 +261,17 @@ def plot_acc_comparison(accsref, accobjlist, cols, ref_choice=[0, 1, 2, 3], ylim
                 sampstd = 1000*np.sqrt(np.mean(errens**2, axis=0))
                 res = 1000*accnew[m][1]['accs'].flatten()
                 lb, ub = 0 - sampstd, sampstd
-                plt.fill_between(accnew[m][1]['mean_z']+1, -(2*sampstd), (2*sampstd), alpha=0.1, color=cols[ctr])
-                plt.fill_between(accnew[m][1]['mean_z']+1, lb, ub, alpha=0.2, color=cols[ctr])
+                if sigcontours=='Default': #1, 2 rms deviations
+                    plt.fill_between(accnew[m][1]['mean_z']+1, -(2*sampstd), (2*sampstd), alpha=0.1, color=cols[ctr])
+                    plt.fill_between(accnew[m][1]['mean_z']+1, lb, ub, alpha=0.2, color=cols[ctr])
+                else:
+                    assert sorted(sigcontours)==sigcontours #asc order eg: [1, 3, 5]
+                    maxalpha=0.3
+                    for icont, sigfac in enumerate(sigcontours):
+                        plt.fill_between(accnew[m][1]['mean_z']+1, -(sigfac*sampstd), (sigfac*sampstd), alpha=maxalpha-(icont*0.1), color=cols[ctr])
                 plt.plot(accnew[m][1]['mean_z']+1, res, label=accnew[m][0], color=cols[ctr])
+                if no_legend:
+                    print(accnew[m][0])
                 ctr +=1
 
     plt.xscale("log")
@@ -317,16 +279,26 @@ def plot_acc_comparison(accsref, accobjlist, cols, ref_choice=[0, 1, 2, 3], ylim
     plt.ylabel(r"$\delta E_{B-V}\:[mmag]$")
     plt.xlabel(r"$z$")
     plt.hlines(0,*plt.gca().get_xlim(),color="k", linestyle='dashed')
-    plt.legend()
+    if not no_legend:
+        plt.legend()
     plt.ylim(ylim)
+    if title is not None:
+        fig.suptitle(title, y=0.94)
+    if savefig is not None:
+        plt.savefig(savefig, dpi=150)
     plt.show()
     return
 
 
-def view_map_patch(Nside, selpix, rot, fullmap, xsize=500):
+def view_map_patch(Nside, selpix, rot, fullmap, xsize=500, view='gnomview', title=None):
     selmap = np.ones(hp.nside2npix(Nside))*hp.UNSEEN
     selmap[selpix] = fullmap[selpix]
-    hp.gnomview(selmap, rot=rot, xsize=xsize)
+    
+    if view=='gnomview':
+        hp.gnomview(selmap, rot=rot, xsize=xsize, title=title)
+    else:
+        hp.mollview(selmap, rot=rot, title=title)
+        
     return
 
 

@@ -192,7 +192,8 @@ def looptilewise(coords, recon_func_name, cuts_list, kwargs_dict, runname, save_
         os.mkdir(tmpdir)
     
     if 'stars_presaved' in kwargs_dict['outer_kwargs'].keys():
-        print('Using dir ', kwargs_dict['outer_kwargs']['stars_presaved'])
+        if isinstance(kwargs_dict['outer_kwargs']['stars_presaved'], str):
+            print('Using dir ', kwargs_dict['outer_kwargs']['stars_presaved'])
         stars_presaved = kwargs_dict['outer_kwargs']['stars_presaved']
     else:
         stars_presaved = '/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/data/lsdraw/stars/{}.fits'
