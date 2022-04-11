@@ -74,6 +74,7 @@ def convert_h5tilemapper_to_dataframe(starfile):
     USE_PERCENTILES= True #first stripe rerun had USE_PERCENTILES=False
 
     dflist = []
+
     for elem in starfile:
         inputfile = h5py.File(elem[0], 'r')
         pixels_all = elem[1]  # inputfile['photometry'].keys()
@@ -86,6 +87,7 @@ def convert_h5tilemapper_to_dataframe(starfile):
             # rename columns: using posterior mean here
             if USE_PERCENTILES:
                 rencols = {"pi": "plx", "pi_err": "plx_err"}
+                nanmask = np.any(np.isnan(dat['percentiles_E']), axis=1) + np.any(np.isnan(dat['percentiles_dm']), axis=1)
                 df['dm_median'] = dat['percentiles_dm'][:, 1]
                 df['E_median'] = dat['percentiles_E'][:, 1]
                 df['dm_sigma'] = (dat['percentiles_dm'][:, 2] - dat['percentiles_dm'][:, 0]) / 2
@@ -95,6 +97,7 @@ def convert_h5tilemapper_to_dataframe(starfile):
                 rencols = {"posterior_mean_dm": "dm_median", "posterior_mean_E": "E_median",
                            "posterior_sigma_dm": "dm_sigma",
                            "posterior_sigma_E": "E_sigma", "pi": "plx", "pi_err": "plx_err"}
+                nanmask = np.isnan(dat['posterior_mean_E'])
             colnames = np.array(dat.colnames)
             gaiacols = colnames[np.array([True if name.startswith('gaia.') else False for name in dat.colnames])]
             rengaia = {gcol: 'gaia_edr3.' + gcol[5:] for gcol in gaiacols}
@@ -130,7 +133,7 @@ def convert_h5tilemapper_to_dataframe(starfile):
                         np.log10(np.array(dat['sdss_dr14_starsweep.psfflux'])[:, ib]), 0.0, np.inf)
                     df['sdss.pmag_err_' + b] = (2.5 / np.log(10)) * (
                             sdss_flux_sig[:, ib] / np.array(dat['sdss_dr14_starsweep.psfflux'])[:, ib])
-            dflist.append(df)
+            dflist.append(df.iloc[nanmask, :])
     df = pd.concat(dflist)
     return df
 
