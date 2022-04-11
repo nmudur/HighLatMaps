@@ -19,8 +19,120 @@ import methods_cluster
 from methods_cluster import *
 import astro_cuts
 from utils_circpatch import *
-#from newcuts_11_14 import *
 
+def map_h5files_to_tiles_proper(inputdir, tiles_recon, Nsidetile=16):
+    '''
+    :param inputdir: Directory with postprocessed input files
+    :param Nsidetile: The Nside corresponding to the pixels in tiles_recon
+    This looks up a directory with bayestar outputs and retrieves a list of relevant h5 files and keys for each pixel
+    :return: # dictionary with tiles @ Nsidetile as key: List of [hdf5 file, list of key strings within BUFFER_RAD of tile]
+    '''
+
+    dirfiles = np.array(os.listdir(inputdir))
+    dirfiles = dirfiles[np.array([dirn.endswith('.h5') for dirn in dirfiles])]
+    tiledict = {}
+
+    # trying not to open files |tiles_recon|*|num_files| times so 2 loops
+    for dirfile in dirfiles: #Loop over files
+        inputfile = h5py.File(inputdir + dirfile, 'r')
+        keys_all = np.array(list(inputfile['photometry'].keys()))
+        print(len(keys_all))
+        Nsidepix, pixels_nested = np.array(
+            [int(key[len('pixel '):key.rindex('-')]) for key in keys_all]), \
+                                  np.array([int(key.split('-')[1]) for key in keys_all]) #[512...512], [pix_id@Nside=512]
+        pixels = hp.nest2ring(Nsidepix, pixels_nested)
+        if len(np.unique(Nsidepix)) > 1:
+            raise NotImplementedError
+        Nsidepix = Nsidepix[0] #always 512
+        starvec = np.vstack(hp.pixelfunc.pix2vec(Nsidepix, pixels)).T  # Nstarx3, Pixkey centers
+
+        for tile in tiles_recon:  # find all relevant keys to each tile that we're reconstructing for
+            pixcenvec = np.array(hp.pixelfunc.pix2vec(Nsidetile, tile))
+            RADIUS = 4.8
+            max_radius_cosine = np.cos(np.deg2rad(RADIUS))  # furthest distance of relevant hdf5 pixels from tile
+            regmask = (np.matmul(starvec, pixcenvec.reshape((3, 1)))) > max_radius_cosine
+            # all starpix with their centers within RADIUS of the tile center must remain
+            regmask = regmask.flatten()
+            regkeys = keys_all[regmask]
+            #(file_dest, relevant_keys_list)
+            if regmask.sum()>0:
+                filetup = (inputdir + dirfile, regkeys)
+                if tile in tiledict:
+                    tiledict[tile] = tiledict[tile] + [filetup]
+                else:
+                    tiledict.update({tile: [filetup]})
+        inputfile.close()
+    return tiledict
+
+
+def convert_h5tilemapper_to_dataframe(starfile):
+    '''
+    :param starfile: list
+    Does convert_to_dataframe for the bayestar reruns
+    :return:
+    '''
+    USE_PERCENTILES= True #first stripe rerun had USE_PERCENTILES=False
+
+    dflist = []
+    for elem in starfile:
+        inputfile = h5py.File(elem[0], 'r')
+        pixels_all = elem[1]  # inputfile['photometry'].keys()
+
+        for pixel in pixels_all:
+            dat = astropy.io.misc.hdf5.read_table_hdf5(inputfile, path='photometry/{}'.format(pixel))
+
+            names = [name for name in dat.colnames if len(dat[name].shape) <= 1]  # single columns
+            df = dat[names].to_pandas()
+            # rename columns: using posterior mean here
+            if USE_PERCENTILES:
+                rencols = {"pi": "plx", "pi_err": "plx_err"}
+                df['dm_median'] = dat['percentiles_dm'][:, 1]
+                df['E_median'] = dat['percentiles_E'][:, 1]
+                df['dm_sigma'] = (dat['percentiles_dm'][:, 2] - dat['percentiles_dm'][:, 0]) / 2
+                df['E_sigma'] = (dat['percentiles_E'][:, 2] - dat['percentiles_E'][:, 0]) / 2
+
+            else: #use mean and sigma of the GMM
+                rencols = {"posterior_mean_dm": "dm_median", "posterior_mean_E": "E_median",
+                           "posterior_sigma_dm": "dm_sigma",
+                           "posterior_sigma_E": "E_sigma", "pi": "plx", "pi_err": "plx_err"}
+            colnames = np.array(dat.colnames)
+            gaiacols = colnames[np.array([True if name.startswith('gaia.') else False for name in dat.colnames])]
+            rengaia = {gcol: 'gaia_edr3.' + gcol[5:] for gcol in gaiacols}
+            # rename gaia columns
+            rencols.update(rengaia)
+            df.rename(columns=rencols, inplace=True)
+            df['DiscPlx'] = np.logical_xor((np.isnan(df['plx'].to_numpy())),
+                                           (np.isnan(df['gaia_edr3.parallax'].to_numpy())))
+
+            if 'err' in dat.colnames:
+                for ib, b in enumerate(['g', 'r', 'i', 'z', 'y', 'J', 'H', 'K']):
+                    df['mag_' + b] = np.array(dat['mag'][:, ib])
+                    df['mag_err_' + b] = np.array(dat['err'][:, ib])
+                    if ib < 5:
+                        df['ps.psfmagmean_' + b] = np.array(dat['mag'][:, ib])
+                        df['ps.psfmagstdev_' + b] = np.array(dat['err'][:, ib])
+                        df['ps.apmagmean_' + b] = np.array(dat['mean_ap'][:, ib])
+                        df['ps.apmagstdev_' + b] = np.array(dat['err_ap'][:, ib])
+                        df['ps.psf-apmag_' + b] = df['ps.psfmagmean_' + b].to_numpy() - df[
+                            'ps.apmagmean_' + b].to_numpy()
+                df['g-r'] = df['mag_g'].to_numpy() - df['mag_r'].to_numpy()
+                df['r-i'] = df['mag_r'].to_numpy() - df['mag_i'].to_numpy()
+                if len([c.startswith('allwise') for c in dat.colnames]) > 0:
+                    df['z-W1'] = df['mag_z'].to_numpy() - df['allwise.w1mpro'].to_numpy()
+                n_passbands = np.count_nonzero(np.isfinite(dat['err']), axis=1)
+                df['reduced_chisq'] = df['chisq'].to_numpy() * n_passbands / (n_passbands - 4)
+
+            # if sdss
+            if np.sum([c.startswith('sdss_dr14_starsweep') for c in dat.colnames]) > 0:
+                sdss_flux_sig = np.power(np.array(dat['sdss_dr14_starsweep.psfflux_ivar']), -0.5)
+                for ib, b in enumerate(['u', 'g', 'r', 'i', 'z']):
+                    df['sdss.pmag_' + b] = 22.5 - 2.5 * np.clip(
+                        np.log10(np.array(dat['sdss_dr14_starsweep.psfflux'])[:, ib]), 0.0, np.inf)
+                    df['sdss.pmag_err_' + b] = (2.5 / np.log(10)) * (
+                            sdss_flux_sig[:, ib] / np.array(dat['sdss_dr14_starsweep.psfflux'])[:, ib])
+            dflist.append(df)
+    df = pd.concat(dflist)
+    return df
 
 def convert_to_dataframe(starfile):
     # converts an input starfile to a dataframe
@@ -28,55 +140,9 @@ def convert_to_dataframe(starfile):
     if isinstance(starfile, list):
         # List of (inputfile, relevant keys)
         print('Rerun bayestar outputs')
-        dflist = []
-        for elem in starfile:
-            inputfile = h5py.File(elem[0], 'r')
-            pixels_all = elem[1]  # inputfile['photometry'].keys()
+        df = convert_h5tilemapper_to_dataframe(starfile)
 
-            for pixel in pixels_all:
-                dat = astropy.io.misc.hdf5.read_table_hdf5(inputfile, path='photometry/{}'.format(pixel))
-
-                names = [name for name in dat.colnames if len(dat[name].shape) <= 1]  # single columns
-                df = dat[names].to_pandas()
-                rencols = {"posterior_mean_dm": "dm_median", "posterior_mean_E": "E_median",
-                           "posterior_sigma_dm": "dm_sigma",
-                           "posterior_sigma_E": "E_sigma", "pi": "plx", "pi_err": "plx_err"}
-                colnames = np.array(dat.colnames)
-                gaiacols = colnames[np.array([True if name.startswith('gaia.') else False for name in dat.colnames])]
-                rengaia = {gcol: 'gaia_edr3.' + gcol[5:] for gcol in gaiacols}
-                rencols.update(rengaia)
-                df.rename(columns=rencols, inplace=True)
-                df['DiscPlx'] = np.logical_xor((np.isnan(df['plx'].to_numpy())),
-                                               (np.isnan(df['gaia_edr3.parallax'].to_numpy())))
-                if 'err' in dat.colnames:
-                    for ib, b in enumerate(['g', 'r', 'i', 'z', 'y', 'J', 'H', 'K']):
-                        df['mag_' + b] = np.array(dat['mag'][:, ib])
-                        df['mag_err_' + b] = np.array(dat['err'][:, ib])
-                        if ib < 5:
-                            df['ps.psfmagmean_' + b] = np.array(dat['mag'][:, ib])
-                            df['ps.psfmagstdev_' + b] = np.array(dat['err'][:, ib])
-                            df['ps.apmagmean_' + b] = np.array(dat['mean_ap'][:, ib])
-                            df['ps.apmagstdev_' + b] = np.array(dat['err_ap'][:, ib])
-                            df['ps.psf-apmag_' + b] = df['ps.psfmagmean_' + b].to_numpy() - df[
-                                'ps.apmagmean_' + b].to_numpy()
-                    df['g-r'] = df['mag_g'].to_numpy() - df['mag_r'].to_numpy()
-                    df['r-i'] = df['mag_r'].to_numpy() - df['mag_i'].to_numpy()
-                    if len([c.startswith('allwise') for c in dat.colnames]) > 0:
-                        df['z-W1'] = df['mag_z'].to_numpy() - df['allwise.w1mpro'].to_numpy()
-                    n_passbands = np.count_nonzero(np.isfinite(dat['err']), axis=1)
-                    df['reduced_chisq'] = df['chisq'].to_numpy() * n_passbands / (n_passbands - 4)
-
-                # if sdss
-                if np.sum([c.startswith('sdss_dr14_starsweep') for c in dat.colnames]) > 0:
-                    sdss_flux_sig = np.power(np.array(dat['sdss_dr14_starsweep.psfflux_ivar']), -0.5)
-                    for ib, b in enumerate(['u', 'g', 'r', 'i', 'z']):
-                        df['sdss.pmag_' + b] = 22.5 - 2.5 * np.clip(
-                            np.log10(np.array(dat['sdss_dr14_starsweep.psfflux'])[:, ib]), 0.0, np.inf)
-                        df['sdss.pmag_err_' + b] = (2.5 / np.log(10)) * (
-                                sdss_flux_sig[:, ib] / np.array(dat['sdss_dr14_starsweep.psfflux'])[:, ib])
-                dflist.append(df)
-        df = pd.concat(dflist)
-
+    #Below is the code that generated the main 6.1 and 15 am maps
     else:
         dat = Table.read(starfile, format='fits')  # for superchunk
         names = [name for name in dat.colnames if len(dat[name].shape) <= 1]
@@ -116,7 +182,6 @@ def convert_to_dataframe(starfile):
                 df['ps.apmagstdev_' + b] = (2.5 / np.log(10)) * (
                             np.array(dat['ucal_fluxqz.stdev_ap'][:, ib]) / np.array(dat['ucal_fluxqz.mean_ap'][:, ib]))
                 df['ps.psf-apmag_' + b] = df['ps.psfmagmean_' + b].to_numpy() - df['ps.apmagmean_' + b].to_numpy()
-
     return df
 
 
@@ -195,7 +260,8 @@ def get_data_for_tile(tile, Nsidetile, radius_deg_extra, cuts_list, Nsideresol, 
     return stars, region
 
 
-def get_recon_for_tile(tile, Nsidetile, radius_deg_extra, recon_func, recon_kwargs, cuts_list, Nsideresol, save=True, savdirname=None, return_vec=False, presaved='/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/data/lsdraw/stars/{}.fits'):
+def get_recon_for_tile(tile, Nsidetile, radius_deg_extra, recon_func, recon_kwargs, cuts_list, Nsideresol, save=True, savdirname=None, return_vec=False, presaved='/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/data/lsdraw/stars_edr3/{}.fits'):
+    #Modified default presaved to now use eDR3
     stars, region = get_data_for_tile(tile, Nsidetile, radius_deg_extra, cuts_list, Nsideresol, presaved=presaved)
     sigma_ref = set_sigma_ref(stars[:, -1])
     #setting sigma ref on the basis of the cleaned, relevant star sample for the entire Nsidetile pixel

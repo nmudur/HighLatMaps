@@ -150,7 +150,7 @@ def gnupartilewise_new(coords, recon_func_name, cuts_list, kwargs_dict, runname,
     # subprocess to .sh
     parstr = 'sbatch --error=' + tmpdir + str(jhash) + '.e --output=' + tmpdir + str(
         jhash) + '.o --export=ALL,TMPDIR=' + tmpdir + ',TILEFILE=' + tilefile + ',MEM=' + str(
-        mem) + ' ' + code_dirname + 'trypargen.sbatch'
+        mem) + ' ' + code_dirname + 'parallel.sbatch'
     out = subprocess.run('module load parallel && ' + parstr, check=True, capture_output=True, shell=True)
 
     # MAIN
