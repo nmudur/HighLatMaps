@@ -124,6 +124,28 @@ def wise_svmnondetectioncombinedcut(df, model=None):
     return wise_combined
 
 
+def wise_svmnondetectioncombinedcut_limiting(df, model=None):
+    #for non-detections pretend W1 is W1LIM
+    W1LIM = 17.44
+    now1mask = df['allwise.w1mpro'].to_numpy() == 0
+    w1corrected = df['allwise.w1mpro'].to_numpy()
+    w1corrected[now1mask] = W1LIM
+    z_w1value = df['mag_z'].to_numpy() - w1corrected
+    
+    if isinstance(model, str):
+        model = joblib.load(model)
+    assert len(model.coef_[0]) == 2, print('Code below assumes two input features')
+
+    def svm_eqn(model, x_points): #returns the line (z-w1) = m*(r-i) + b
+        w = model.coef_[0]
+        b = model.intercept_[0]
+        return -(w[0] / w[1]) * x_points - b / w[1]
+    
+    star_svmval = z_w1value - svm_eqn(model, df['r-i'].to_numpy())
+    star_svmcut = (star_svmval < 0)
+    return star_svmcut
+
+
 def wise_svmnondetectioncombinedcut_nozreq(df, model=None):
     #more lenient, keeps the object if you have a nan in 3 ps1 bands
     if isinstance(model, str):

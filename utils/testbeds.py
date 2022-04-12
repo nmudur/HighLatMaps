@@ -188,6 +188,9 @@ def get_testbed_dict(name, Nresol=2048):
             pix2k.append(get_smallpix_in_tilepix(32, t32, Nresol))
         pix2k = np.unique(np.hstack(pix2k))
         rot, xsize= [135, -30], 1000
+    elif name=='Stripe-Square':
+        pix2k = get_tile_idx_in_lbpatch(Nresol, [246, 26, 274, 54])
+        rot, xsize = [260, 40], 1000
     elif name=='NGC':
         pix2k = get_tile_idx_in_circlepatch(Nresol, [0, 90], 50)
         rot, xsize = [0, 90], 5000

@@ -20,6 +20,8 @@ from methods_cluster import *
 import astro_cuts
 from utils_circpatch import *
 
+
+
 def map_h5files_to_tiles_proper(inputdir, tiles_recon, Nsidetile=16):
     '''
     :param inputdir: Directory with postprocessed input files
@@ -31,7 +33,7 @@ def map_h5files_to_tiles_proper(inputdir, tiles_recon, Nsidetile=16):
     dirfiles = np.array(os.listdir(inputdir))
     dirfiles = dirfiles[np.array([dirn.endswith('.h5') for dirn in dirfiles])]
     tiledict = {}
-
+    
     # trying not to open files |tiles_recon|*|num_files| times so 2 loops
     for dirfile in dirfiles: #Loop over files
         inputfile = h5py.File(inputdir + dirfile, 'r')
@@ -44,24 +46,29 @@ def map_h5files_to_tiles_proper(inputdir, tiles_recon, Nsidetile=16):
         if len(np.unique(Nsidepix)) > 1:
             raise NotImplementedError
         Nsidepix = Nsidepix[0] #always 512
-        starvec = np.vstack(hp.pixelfunc.pix2vec(Nsidepix, pixels)).T  # Nstarx3, Pixkey centers
+        try:
+            starvec = np.vstack(hp.pixelfunc.pix2vec(Nsidepix, pixels)).T  # Nstarx3, Pixkey centers
 
-        for tile in tiles_recon:  # find all relevant keys to each tile that we're reconstructing for
-            pixcenvec = np.array(hp.pixelfunc.pix2vec(Nsidetile, tile))
-            RADIUS = 4.8
-            max_radius_cosine = np.cos(np.deg2rad(RADIUS))  # furthest distance of relevant hdf5 pixels from tile
-            regmask = (np.matmul(starvec, pixcenvec.reshape((3, 1)))) > max_radius_cosine
-            # all starpix with their centers within RADIUS of the tile center must remain
-            regmask = regmask.flatten()
-            regkeys = keys_all[regmask]
-            #(file_dest, relevant_keys_list)
-            if regmask.sum()>0:
-                filetup = (inputdir + dirfile, regkeys)
-                if tile in tiledict:
-                    tiledict[tile] = tiledict[tile] + [filetup]
-                else:
-                    tiledict.update({tile: [filetup]})
-        inputfile.close()
+            for it, tile in enumerate(tiles_recon):  # find all relevant keys to each tile that we're reconstructing for
+                #print('tile', tile)
+                pixcenvec = np.array(hp.pixelfunc.pix2vec(Nsidetile, tile))
+                RADIUS = 4.8
+                max_radius_cosine = np.cos(np.deg2rad(RADIUS))  # furthest distance of relevant hdf5 pixels from tile
+                regmask = (np.matmul(starvec, pixcenvec.reshape((3, 1)))) > max_radius_cosine
+                # all starpix with their centers within RADIUS of the tile center must remain
+                regmask = regmask.flatten()
+                regkeys = keys_all[regmask]
+                #(file_dest, relevant_keys_list)
+                if regmask.sum()>0:
+                    filetup = (inputdir + dirfile, regkeys)
+                    if tile in tiledict:
+                        tiledict[tile] = tiledict[tile] + [filetup]
+                    else:
+                        tiledict.update({tile: [filetup]})
+                    
+            inputfile.close()
+        except FloatingPointError as r:
+            print(dirfile, Nsidetile, tile, pixcenvec)
     return tiledict
 
 
@@ -71,7 +78,7 @@ def convert_h5tilemapper_to_dataframe(starfile):
     Does convert_to_dataframe for the bayestar reruns
     :return:
     '''
-    USE_PERCENTILES= True #first stripe rerun had USE_PERCENTILES=False
+    USE_PERCENTILES= False #first stripe rerun had USE_PERCENTILES=False
 
     dflist = []
 
@@ -133,8 +140,10 @@ def convert_h5tilemapper_to_dataframe(starfile):
                         np.log10(np.array(dat['sdss_dr14_starsweep.psfflux'])[:, ib]), 0.0, np.inf)
                     df['sdss.pmag_err_' + b] = (2.5 / np.log(10)) * (
                             sdss_flux_sig[:, ib] / np.array(dat['sdss_dr14_starsweep.psfflux'])[:, ib])
-            dflist.append(df.iloc[nanmask, :])
+            dflist.append(df.iloc[~nanmask, :]) #add for each pixel
+            #print(len(df.iloc[nanmask, :]))
     df = pd.concat(dflist)
+    print('Stars Pre Cuts in h5mapper2df', len(df))
     return df
 
 def convert_to_dataframe(starfile):
@@ -191,7 +200,7 @@ def convert_to_dataframe(starfile):
 
 def cuts_wrapper(starfile, nsidetile, tile, radius_deg_extra, cuts_list, coordstype='UnitVector', return_mask=False):
     df = convert_to_dataframe(starfile)
-    
+    print('Stars Pre Cuts in cuts_wrapper', len(df))
     # tile region cut: select stars relevant to the region you're looking at
     #All stars within a radius of <max distance from Nsidetile pixel center to edge of Nsidetile pixel + radius_deg_extra> are selected
     
@@ -304,7 +313,7 @@ if __name__=='__main__':
     '''
 
 
-    #Code for when run using GNUPar
+    #Code for when run using GNUParallel
     #argv: picklename, tile, tmpdir
     tile, tmpdir = int(sys.argv[1]), sys.argv[2]
     if not os.path.exists(tmpdir+'recon_{}.hdf5'.format(tile)):
@@ -312,7 +321,8 @@ if __name__=='__main__':
         Nsidetile, radius_deg_extra, recon_kwargs, cuts_list, Nsideresol = recon_info['Nsidetile'], recon_info['radius_deg_extra'], recon_info['recon_kwargs'], recon_info['cuts_list'], recon_info['Nsideresol']
         recon_func = getattr(methods_cluster, recon_info['recon_func_name'])
         if 'stars_presaved' in recon_info.keys():
-            print('Using dir ', recon_info['stars_presaved'])
+            if isinstance(recon_info['stars_presaved'], str):
+                print('Using dir ', recon_info['stars_presaved'])
             out = get_recon_for_tile(tile, Nsidetile=Nsidetile, radius_deg_extra=radius_deg_extra, recon_func=recon_func, recon_kwargs=recon_kwargs, cuts_list=cuts_list, Nsideresol=Nsideresol, save=True, savdirname=tmpdir, presaved=recon_info['stars_presaved'])
         else:
             #runs with inner gaia crossmatch starfiles

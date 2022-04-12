@@ -23,64 +23,6 @@ code_dirname = '/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/methods_code_N
 
 ##Full region-level functions: Inputs: coords, recon_func_name, cuts_list, kwargs_dict: recon_kwargs, outer_kwargs (for region level functions)
 #Call the tile-level functions or work on tiling internally. Stars are only queried here if tiling is done here.
-def gnupartilewise(coords, recon_func_name, cuts_list, kwargs_dict, runname, sleep=180, mem=2000):
-    #basically replace the try0.sbatch here or calls the gnu parallel script with the do_recon as an argument after saving the pickle
-    #TODO: Complete. Do unit testing.
-    tmpdir = runname+'_tmpdir/'
-    if os.path.exists(tmpdir):
-        print('Dir already exists')
-    else:
-        os.mkdir(tmpdir)
-
-    # region
-    tiles = get_largepix_for_smallpix(coords, kwargs_dict['outer_kwargs']['Nsideresol'], kwargs_dict['outer_kwargs']['Nsidetile'])
-    tiles = np.unique(tiles)
-    if os.path.exists(tmpdir+'tiles.txt'):
-        print('Tiles file already exists')
-        
-    else:
-        with open(tmpdir+'tiles.txt', 'w') as ft:
-            for tile in tiles:
-                ft.write(str(tile)+'\n')
-
-    #save pickle
-    recon_info = {'Nsidetile': kwargs_dict['outer_kwargs']['Nsidetile'],
-                  'radius_deg_extra': kwargs_dict['outer_kwargs']['radius_deg_extra'],
-                  'Nsideresol': kwargs_dict['outer_kwargs']['Nsideresol'],
-                  'recon_kwargs': kwargs_dict['recon_kwargs'],
-                  'cuts_list': cuts_list,
-                  'tiles': tiles,
-                  'recon_func_name': recon_func_name}
-    if 'stars_presaved' in kwargs_dict['outer_kwargs'].keys():
-        print('Using Star Directory: '+kwargs_dict['outer_kwargs']['stars_presaved'])
-        recon_info.update({'stars_presaved': kwargs_dict['outer_kwargs']['stars_presaved']})
-    
-    if os.path.exists(tmpdir + 'recon_info.pkl'):
-        print('Tmp pickle already exists')
-        existing_info = pickle.load(open(tmpdir + 'recon_info.pkl', 'rb'))
-        if recon_info!=existing_info:
-            print('Discrepancy between recon_info dictionaries')
-    else:
-        pickle.dump(recon_info, open(tmpdir + 'recon_info.pkl', 'wb'))
-        
-    jhash = randint(100, 999)
-
-    
-    #subprocess to .sh
-    parstr = 'sbatch --error='+tmpdir+str(jhash)+'.e --output='+tmpdir+str(jhash)+'.o --export=ALL,TMPDIR='+tmpdir+',TILEFILE='+tmpdir+'tiles.txt,MEM='+str(mem)+' '+code_dirname+'trypargen.sbatch'
-    out = subprocess.run('module load parallel && '+parstr, check=True, capture_output=True, shell=True)
-    
-    #MAIN
-    time.sleep(sleep)
-    reconmap, varmap, reconpix = get_Nsideresol_healpix_map_from_gnuparpatches_safe(tmpdir, Nsideresol=kwargs_dict['outer_kwargs']['Nsideresol'], tiles=tiles)
-    result_dict = {'dustmap': reconmap, 'variancemap': varmap, 'reconpix': reconpix,
-                   'func': 'gnupartilewise',
-                   'cuts_list': cuts_list, 'recon_func_name': recon_func_name,
-                   'kwargs_dict': kwargs_dict}
-    pickle.dump(result_dict, open(runname + '.pkl', 'wb'))
-    return result_dict
-    
-
     
 def gnupartilewise_new(coords, recon_func_name, cuts_list, kwargs_dict, runname, sleep=180, mem=2000, compile_pickle=True):
     '''
@@ -100,6 +42,7 @@ def gnupartilewise_new(coords, recon_func_name, cuts_list, kwargs_dict, runname,
         print('Dir already exists')
     else:
         os.mkdir(tmpdir)
+        os.mkdir(os.path.join(tmpdir, 'logs'))
 
     # tiles: Nsidetile pixels corresponding to coords
     tiles = get_largepix_for_smallpix(coords, kwargs_dict['outer_kwargs']['Nsideresol'], kwargs_dict['outer_kwargs']['Nsidetile'])
@@ -137,7 +80,10 @@ def gnupartilewise_new(coords, recon_func_name, cuts_list, kwargs_dict, runname,
                   'recon_func_name': recon_func_name}
     #Added later: if you don't want to use the default STARDIR. Eg: For outer_gaia check.
     if 'stars_presaved' in kwargs_dict['outer_kwargs'].keys():
-        print('Using Star Directory: '+kwargs_dict['outer_kwargs']['stars_presaved'])
+        if isinstance(kwargs_dict['outer_kwargs']['stars_presaved'], str):
+            print('Using dir ', kwargs_dict['outer_kwargs']['stars_presaved'])
+        
+        stars_presaved = kwargs_dict['outer_kwargs']['stars_presaved']
         recon_info.update({'stars_presaved': kwargs_dict['outer_kwargs']['stars_presaved']})
 
     if os.path.exists(tmpdir + 'recon_info.pkl'):
