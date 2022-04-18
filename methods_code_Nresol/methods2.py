@@ -42,6 +42,8 @@ def gnupartilewise_new(coords, recon_func_name, cuts_list, kwargs_dict, runname,
         print('Dir already exists')
     else:
         os.mkdir(tmpdir)
+    
+    if not os.path.exists(os.path.join(tmpdir, 'logs')):
         os.mkdir(os.path.join(tmpdir, 'logs'))
 
     # tiles: Nsidetile pixels corresponding to coords

@@ -78,7 +78,7 @@ def convert_h5tilemapper_to_dataframe(starfile):
     Does convert_to_dataframe for the bayestar reruns
     :return:
     '''
-    USE_PERCENTILES= False #first stripe rerun had USE_PERCENTILES=False
+    USE_PERCENTILES= True #first stripe rerun had USE_PERCENTILES=False
 
     dflist = []
 

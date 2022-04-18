@@ -7,6 +7,10 @@ import sklearn
 def distmod_median_cut(df, mindm=8):
     return df['dm_median'].to_numpy() > mindm
 
+def distmod_median_cut_corr(df, minpc=200):
+    #minpc: scale height in pc
+    dist_median = 10**(1+ (df['dm_median'].to_numpy()/5))
+    return dist_median*np.sin(np.deg2rad(df['b'].to_numpy())) > minpc
 
 def e_nonneg_cut(df):
     return df['E_median'].to_numpy() + df['E_sigma'].to_numpy() > 0
@@ -128,7 +132,7 @@ def wise_svmnondetectioncombinedcut_limiting(df, model=None):
     #for non-detections pretend W1 is W1LIM
     W1LIM = 17.44
     now1mask = df['allwise.w1mpro'].to_numpy() == 0
-    w1corrected = df['allwise.w1mpro'].to_numpy()
+    w1corrected = df['allwise.w1mpro'].to_numpy(copy=True)
     w1corrected[now1mask] = W1LIM
     z_w1value = df['mag_z'].to_numpy() - w1corrected
     
