@@ -250,7 +250,7 @@ def plot_acc_comparison(accsref, accobjlist, cols, ref_choice=[0, 1, 2, 3], ylim
                 maxalpha=0.3
                 for icont, sigfac in enumerate(sigcontours):
                     plt.fill_between(accsref[m][1]['mean_z']+1, -(sigfac*sampstd), (sigfac*sampstd), alpha=maxalpha-(icont*0.1), color=cols[m])
-            plt.plot(accsref[m][1]['mean_z']+1, res, label=accsref[m][0], color=cols[m])
+            plt.plot(accsref[m][1]['mean_z']+1, res, label=accsref[m][0], color=cols[m], marker='.')
             if no_legend:
                 print(accsref[m][0])
     ctr=m+1
@@ -269,7 +269,7 @@ def plot_acc_comparison(accsref, accobjlist, cols, ref_choice=[0, 1, 2, 3], ylim
                     maxalpha=0.3
                     for icont, sigfac in enumerate(sigcontours):
                         plt.fill_between(accnew[m][1]['mean_z']+1, -(sigfac*sampstd), (sigfac*sampstd), alpha=maxalpha-(icont*0.1), color=cols[ctr])
-                plt.plot(accnew[m][1]['mean_z']+1, res, label=accnew[m][0], color=cols[ctr])
+                plt.plot(accnew[m][1]['mean_z']+1, res, label=accnew[m][0], color=cols[ctr], marker='.')
                 if no_legend:
                     print(accnew[m][0])
                 ctr +=1
