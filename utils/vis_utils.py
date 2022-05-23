@@ -290,6 +290,110 @@ def plot_acc_comparison(accsref, accobjlist, cols, ref_choice=[0, 1, 2, 3], ylim
     return
 
 
+def plot_acc_comparison_sampling(accobjlist, cols, ylim=[-0.5, 0.5], sigcontours='Default', no_legend=False, savefig=None, title=None):
+    '''
+    :param accobjlist: List of accdict['accs_all']
+    :param cols: Colors
+    :param ylim:
+    :param no_legend:
+    :param savefig:
+    :param title:
+    :return:
+    '''
+
+    fig = plt.figure(figsize=(10,5))
+    ctr=0
+    for accnew in accobjlist: #each element is the "accs_all" element of the output of preproc_get_acc_intgn
+        for m in range(len(accnew)): #m=0, in most cases (When multiple maps' accs were passed to preproc_get_acc_intgn at the same time, it's >1)
+            #res = 1000*accnew[m][1]['accs'].flatten() #not this because this has shape 1xNbtsxNz
+            stdbts = 1000*accnew[m][-1].flatten()
+            meanbts = 1000 * accnew[m][-2].flatten()
+
+            if sigcontours=='Default': #1, 2 sig deviations about the mean
+                plt.fill_between(accnew[m][1]['mean_z']+1, meanbts-(2*stdbts), meanbts+(2*stdbts), alpha=0.1, color=cols[ctr])
+                plt.fill_between(accnew[m][1]['mean_z']+1, meanbts-stdbts, meanbts+stdbts, alpha=0.2, color=cols[ctr])
+            else:
+                assert sorted(sigcontours)==sigcontours #asc order eg: [1, 3, 5]
+                maxalpha=0.3
+                for icont, sigfac in enumerate(sigcontours):
+                    plt.fill_between(accnew[m][1]['mean_z']+1, meanbts-(sigfac*stdbts), meanbts+(sigfac*stdbts), alpha=maxalpha-(icont*0.1), color=cols[ctr])
+            plt.plot(accnew[m][1]['mean_z']+1, meanbts, label=accnew[m][0], color=cols[ctr], marker='.')
+            if no_legend:
+                print(accnew[m][0])
+            ctr +=1
+
+    plt.xscale("log")
+    plt.xticks(np.arange(5)+1,np.arange(5))
+    plt.ylabel(r"$\delta E_{B-V}\:[mmag]$")
+    plt.xlabel(r"$z$")
+    plt.hlines(0,*plt.gca().get_xlim(),color="k", linestyle='dashed')
+    if not no_legend:
+        plt.legend()
+    plt.ylim(ylim)
+    if title is not None:
+        fig.suptitle(title, y=0.94)
+    if savefig is not None:
+        plt.savefig(savefig, dpi=150)
+    plt.show()
+    return
+
+
+def plot_errorbar_ratio(accobjdict, cols, no_legend=False, savefig=None, title=None):
+    '''
+    :param accobjdict: 'Rotated', 'Bootstrapped'
+
+        e.g accsfddict = pickle.load(open('runs/2_6/accdir/sfd_corr_acc_intgn.pkl', 'rb'))
+            accsfd = accsfddict['accs_all']
+            accbtsdict = pickle.load(open('runs/2_6/accdir/panel_acc_intgn_bootstrapped.pkl', 'rb'))
+            accbts = accbtsdict['accs_all'] #has length number of maps whose accs were evaluated by that routine
+            #for only SFD
+            {'Rotated': [accsfd[0]], 'Bootstrapped': [accbts[0]]}
+            accsfd[0] & accbts[0] have length 5
+
+    :param cols: Colors
+    :param ylim:
+    :param no_legend:
+    :param savefig:
+    :param title:
+    :return:
+    '''
+    fig = plt.figure(figsize=(10,5))
+
+    #Rotated EBs
+    accrotlist = accobjdict['Rotated']
+    accbtslist = accobjdict['Bootstrapped']
+    assert len(accrotlist)== len(accbtslist)
+
+    for m in range(len(accrotlist)):
+        accrot = accrotlist[m]
+        accbts = accbtslist[m]
+        print('Rotated Map: ', accrot[0])
+        #assert len(accrot) == 5
+        errens = accrot[-1]
+        rmsrot = 1000*np.sqrt(np.mean(errens**2, axis=0))
+
+        #Bootstrapped EBs
+        print('Bootstrapped Map: ', accbts[0])
+        assert len(accbts) == 5
+        stdbts = 1000*accbts[-1].flatten()
+
+        plt.plot(accrot[1]['mean_z']+1, rmsrot/stdbts, marker='.', color=cols[m], label=accrot[0])
+
+
+    plt.xscale("log")
+    plt.xticks(np.arange(5)+1,np.arange(5))
+    plt.ylabel(r"$\delta E_{B-V}\:[mmag]$")
+    plt.xlabel(r"$z$")
+
+    if not no_legend:
+        plt.legend(prop={'size': 10})
+    if title is not None:
+        fig.suptitle(title, y=0.94)
+    if savefig is not None:
+        plt.savefig(savefig, dpi=150)
+    plt.show()
+    return
+
 def view_map_patch(Nside, selpix, rot, fullmap, xsize=500, view='gnomview', title=None):
     selmap = np.ones(hp.nside2npix(Nside))*hp.UNSEEN
     selmap[selpix] = fullmap[selpix]
@@ -445,7 +549,7 @@ def plot_noise_vs_latitude(latwise_offsets, kwargs):
     figsize=kwargs['figsize'] if 'figsize' in kwargs.keys() else (6, 6)
     
     plt.figure(figsize=figsize)
-    cycle = ['b', 'k', 'r', 'g', 'y'] #plt.rcParams['axes.prop_cycle'].by_key()['color']
+    cycle = ['c', 'k', 'r', 'g', 'y'] #plt.rcParams['axes.prop_cycle'].by_key()['color']
     alpha=1
     for il, latlist in enumerate(latwise_offsets):
         assert len(latlist) == len(plot_map_names)

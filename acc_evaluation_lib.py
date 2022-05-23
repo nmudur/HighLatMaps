@@ -143,7 +143,6 @@ def get_acc_all_intg_nside2048_batch(dustmaps_val,maskingname,device="cpu",dtype
     
     dustmaps_vals, (N_maps,n_pixels), where N_maps is the number of maps fed in and n_pixels are the values corresponsing to the nside=2048 indices in this masking name
     maskingname, str, name of mask to apply. One of ["NGC","FULL","South","North"]
-    n_bootstrap int, number of bootstrap samples used, None uses the maximum amount(currently 10)
     device: device to compute on "cpu" recommended
     dtype: dtype used torch.float64 recommended
     """
@@ -267,7 +266,7 @@ def preproc_get_acc_intgn(maps, names, reconpix, maskingname, smooths, savname, 
     '''
     assert all([len(m)==hp.nside2npix(2048) for m in maps])
     indices=get_masking_indices(maskingname)
-    dustmaps_val = []
+    dustmaps_val = [] #delEmaps: has length N_sm*N_map (N_map in the usual single smooth case)
     names_aug = []
     for ifm,fullmap in enumerate(maps):
         dustmap=np.full(hp.nside2npix(2048),np.nan)
@@ -291,9 +290,10 @@ def preproc_get_acc_intgn(maps, names, reconpix, maskingname, smooths, savname, 
             accs_intg=accs["accs"] #1, Nbts, Nz
             means=accs_intg.mean(1)
             stds=accs_intg.std(1,ddof=1)
-            accs_all.append((names[idx], accs, accs_intg, means, stds))
+            accs_all.append((names_aug[idx], accs, accs_intg, means, stds))
         if save_acc_intgn:
-            pickle.dump(accs_all, open(savname+'_acc_intgn.pkl', 'wb'))
+            savdict = {'accs_all':accs_all, 'names': names_aug, 'reconpix': reconpix, 'maskingname': maskingname, 'error_args': error_args, 'smooths': smooths}
+            pickle.dump(savdict, open(savname+'_acc_intgn_bootstrapped.pkl', 'wb'))
             
     else: #errortype: Rotations
         accs_all = []

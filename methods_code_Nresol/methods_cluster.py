@@ -9,6 +9,35 @@ from scipy.sparse import dok_matrix, csc_matrix
 import healpy as hp
 import pandas as pd
 
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+torch.set_default_dtype(torch.float)
+
+class myKernel(torch.nn.Module):
+    def __init__(self, lengthscale=None):
+        self.training = False
+        self.lengthscale=lengthscale
+
+    def forward(self, x1, x2=None):
+        raise NotImplementedError
+
+    def __call__(self, x1, x2=None):
+        return self.forward(x1, x2)
+
+class ScaledRBFKernel(myKernel):
+    def __init__(self, outputscale, lengthscale):
+        super().__init__(lengthscale=lengthscale)
+        self.outputscale = torch.tensor(outputscale, dtype=torch.float, device=device)
+
+    def forward(self, x1, x2=None): #checked
+        assert x1.shape[1]==2
+        if x2 is None:
+            return torch.tensor(squareform((self.outputscale*torch.exp(-torch.nn.functional.pdist(x1)**2/(2*self.lengthscale**2))).cpu().numpy()) + self.outputscale.cpu().numpy()*np.eye(x1.shape[0]), device=device, dtype=torch.float) #you have to add the torch.eye because the diagonal is 0 otherwise
+        else:
+            assert x2.shape[1] == 2
+            return torch.tensor(self.outputscale*torch.exp(- torch.cdist(x1, x2, p=2)**2 / (2*self.lengthscale**2)), dtype=torch.float)
+
+
 def SqExpBasis(x, length, scale):
     return (scale ** 2) * np.exp(-(x ** 2 / (2 * (length ** 2))))
 
@@ -64,14 +93,27 @@ def gp_reconstruction(stars, region, length=5.0, scale=1.0, diagreg='Sigma', ver
     return gprecon, gp_postcov
 
 
-def gp_reconstruction_pytorch(stars, region, length=5.0, scale=1.0, diagreg='Sigma', verbose=False, return_posterr=True,
-                              train_frac=1.0):
+def gp_reconstruction_pytorch(stars, region, length=np.deg2rad(1), scale=1.0, diagreg='Sigma', verbose=False, return_posterr=True,
+                              train_frac=1.0, kernel='RBF', nu=None):
+    #UNRESOLVED BUGS: FIX FIRST
+    #this assumed you'd already projected into 2D
+    #All arguments should then be in radians
+    if kernel=='RBF':
+        kernfunc = ScaledRBFKernel(outputscale=scale, lengthscale=length)
+    else:
+        assert nu is not None
+        raise NotImplementedError
+        #matern
+    assert stars.shape[1]==4
+    assert region.shape[1]==2
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     if train_frac == 1.0:
         ttrain_x = torch.tensor(np.hstack([stars[:, 0].reshape((-1, 1)), stars[:, 1].reshape((-1, 1))]), device=device)
         ttrain_y = torch.tensor(stars[:, 2], device=device)
         train_sig2 = stars[:, 3] ** 2
+
     else:
         choice_idx = np.random.choice(stars.shape[0], size=int(train_frac * stars.shape[0]), replace=False)
         ttrain_x = torch.tensor(
@@ -80,27 +122,27 @@ def gp_reconstruction_pytorch(stars, region, length=5.0, scale=1.0, diagreg='Sig
         train_sig2 = stars[choice_idx, 3] ** 2
 
     ttest_x = torch.tensor(region, device=device)
-    cov_tr = squareform(
-        torchSqExpBasis(torch.nn.functional.pdist(ttrain_x, p=2), length, scale).cpu().numpy()) + np.eye(len(ttrain_x))
 
+    cov_tr = kernfunc(ttrain_x)
+    
     if diagreg == 'Sigma':
-        diagreg = np.diag(train_sig2)
+        diagreg = torch.diag(torch.tensor(train_sig2, device=device))
     else:
-        diagreg = diagreg
-    cov_tr_torch = torch.tensor(cov_tr + diagreg, device=device)
-    print('Post Reg CondNo=', torch.linalg.cond(cov_tr_torch))
-    tsolve_prod = torch.linalg.solve(cov_tr_torch, ttrain_y - torch.mean(ttrain_y))
-    cov_test_train = torchSqExpBasis(torch.cdist(ttest_x, ttrain_x, p=2), length, scale)
+        diagreg = torch.diag(torch.tensor(train_sig2, device=device)) + torch.eye(len(ttrain_y))*diagreg
+
+    cov_tr += diagreg
+    print('Post Reg CondNo=', torch.linalg.cond(cov_tr))
+    tsolve_prod = torch.linalg.solve(cov_tr, torch.tensor(ttrain_y - torch.mean(ttrain_y), dtype=torch.float, device=device))
+    cov_test_train = kernfunc(ttest_x, ttrain_x)
 
     gprecon = torch.mean(ttrain_y) + torch.matmul(cov_test_train, tsolve_prod)
     if verbose:
-        return gprecon.cpu().numpy(), cov_tr_torch.cpu().numpy()
+        return gprecon.cpu().numpy(), cov_tr.cpu().numpy()
     if return_posterr:
         print("Not implemented yet")
-        # gp_postcov = torchSqExpBasis(squareform(pdist(test_x)), length, scale) - np.matmul(np.matmul(cov_test_train, cov_trinv), SqExpBasis(cdist(train_x, test_x), length, scale)) #probably gonna crash
-        # return gprecon.cpu().numpy(), gp_postcov.cpu().numpy()
     else:
         return gprecon.cpu().numpy()
+
 
 
 
