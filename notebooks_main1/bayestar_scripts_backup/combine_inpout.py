@@ -6,12 +6,13 @@ import astropy
 import h5py
 import os
 import scipy
+import scipy.stats
 
 from astropy.table import Table
 from astropy.io import fits
 
 
-
+'''
 output_dir = '/n/holylfs05/LABS/finkbeiner_lab/Lab/nmudur/bayestar_edr3/output/'
 input_dir = '/n/holylfs05/LABS/finkbeiner_lab/Lab/nmudur/bayestar_edr3/input/'
 
@@ -19,10 +20,10 @@ egrid = np.arange(700)*0.01
 dm_grid = 4 + np.arange(120)*0.125
 
 def get_index_percentiles_from_distribution(starr):
-    '''
-    Array with (Nstars, E, distmod)
-    input should already have the nopost stars masked out
-    '''
+    
+    #Array with (Nstars, E, distmod)
+    #input should already have the nopost stars masked out
+    
     assert starr.shape[1]==700
     assert starr.shape[2]==120
     Nstars = starr.shape[0]
@@ -45,10 +46,10 @@ def get_index_percentiles_from_distribution(starr):
 
 
 def combine_input_and_output(stripe_file):
-    '''
-    Links the input and output files to generate <something that astropy.table can read>
-    Then use LSD make_LSD_schema to reprocess this into a bayestar19like table
-    '''
+    
+    #Links the input and output files to generate <something that astropy.table can read>
+    #Then use LSD make_LSD_schema to reprocess this into a bayestar19like table
+    
 
     Numtotstars = 0
     nopoststars = 0
@@ -81,12 +82,15 @@ def combine_input_and_output(stripe_file):
     inpf.close()
     outf.close()
     return filetable
+'''
 
-
+###Function to calculate the mean, sigma of the posterior GMM
 def get_gmm_mean_sigma(f, pixel):
     '''
     f: h5py. file
     pixel: pixel id for which you're processing the file to get the mean and cov of the GMM. eg. pixel 512-602370
+
+    Handles nans by returning nans
     '''
     t = astropy.io.misc.hdf5.read_table_hdf5(f, path='{}/gridstars'.format(pixel))
     #get mixture weights
@@ -112,29 +116,8 @@ def get_gmm_mean_sigma(f, pixel):
     return gmm_mean, np.sqrt(np.vstack([cov_mm_00, cov_mm_11]).T)
 
 
-def postprocess_output(fname, fname_save, delete=False):
-    '''
-    Add additional mean and sigma columns to the corresponding input file
-    '''
-    f = h5py.File(fname, 'r')
-    modf = h5py.File(fname_save, 'a')
-    for pixel in f.keys():
-        try:
-            mean, sigma = get_gmm_mean_sigma(f, pixel)
-            modf['photometry/{}'.format(pixel)]['chisq'] = f[pixel+'/star_chi2'][:]
-            modf['photometry/{}'.format(pixel)]['posterior_mean_dm'] = mean[:, 0]
-            modf['photometry/{}'.format(pixel)]['posterior_mean_E'] = mean[:, 1]
-            modf['photometry/{}'.format(pixel)]['posterior_sigma_dm'] = sigma[:, 0]
-            modf['photometry/{}'.format(pixel)]['posterior_sigma_E'] = sigma[:, 1]
-        except Exception as e:
-            print(repr(e), fname, pixel)
-    f.close()
-    modf.close()
-    if delete:
-        os.remove(fname)
-    return
 
-
+### Functions to calculate the cdf and percentiles of the posterior GMM
 def eval_marginal_gmm_cdf(x, comp_mean, comp_weight, comp_sigma):
     return np.sum(comp_weight*scipy.stats.norm.cdf(x, loc=comp_mean, scale=comp_sigma))
 
@@ -144,7 +127,7 @@ def compute_percentile_given_gmm_inputs_1d(comp_means, comp_weights, comp_sigmas
 
     #dm: calculating percentiles independently
     cdf_func = np.vectorize(lambda x: eval_marginal_gmm_cdf(x, comp_means, comp_weights, comp_sigmas))
-    idx_sorted = np.argsort(comp_means)
+    idx_sorted = np.argsort(comp_means) #sort by component means
     means_sorted, sigmas_sorted, weights_sorted = comp_means[idx_sorted], comp_sigmas[idx_sorted], comp_weights[idx_sorted]
     cdf_at_means = cdf_func(means_sorted)
     percs = np.array([0.1587, 0.50, 0.8413])
@@ -152,10 +135,13 @@ def compute_percentile_given_gmm_inputs_1d(comp_means, comp_weights, comp_sigmas
     #print(cdf_at_means[idx_percs -1], cdf_at_means[idx_percs])
     eperc_vals, actual_percs = np.ones(3)*np.nan, np.ones(3)*np.nan
     for ip, percn in enumerate(percs):
-        values = np.linspace(means_sorted[idx_percs[ip]-1], means_sorted[idx_percs[ip]], 100)
+        lower_lim = means_sorted[idx_percs[ip] -1] if idx_percs[ip]>0 else means_sorted[0]/10
+        upper_lim = means_sorted[idx_percs[ip]] if idx_percs[ip]<250 else means_sorted[-1]*10
+        values = np.linspace(lower_lim, upper_lim, 10)
+         
         percvals = cdf_func(values)
         percdiff = np.abs(percvals - percn)
-        idxmin = np.where(percdiff == np.min(percdiff))[0][0]
+        idxmin = np.arange(len(percdiff))[np.isclose(percdiff, np.min(percdiff))][0]  #np.where(percdiff == np.min(percdiff))[0][0]
         eperc_vals[ip] = values[idxmin]
         actual_percs[ip] = percvals[idxmin]
     return eperc_vals, actual_percs
@@ -170,7 +156,10 @@ def get_gmm_percentiles(f, pixel):
     gmm_pi = np.array(t['ln_prior'] + t['ln_likelihood'])
     gmm_pi = np.exp(gmm_pi)
     gmm_pi = gmm_pi / np.sum(gmm_pi, axis=1).reshape((-1, 1)) #Nstar x Ncomp
-
+    nanmask = np.any(np.isnan(gmm_pi), axis=1)
+    if nanmask.sum()>0:
+        print('Pixel: {} Nanstars={}'.format(pixel, nanmask.sum()))
+    
     # get component covs
     invcov = np.array(f['{}/gridstars_icov'.format(pixel)])
     invcov00, invcov01, invcov11 = invcov[:, 0], invcov[:, 1], invcov[:, 2]
@@ -181,20 +170,60 @@ def get_gmm_percentiles(f, pixel):
     means = np.stack([np.array(t['dm']), np.array(t['E'])], axis=-1) #check: NstarxNcompx2
 
     # distribution percs
-    #dm
     dm_values = np.ones((gmm_pi.shape[0], 3))*(np.nan)
-    Ncomp = gmm_pi.shape[1]
-    for ist in range(gmm_pi.shape[0]):
-        dm_values[ist, :], _ = compute_percentile_given_gmm_inputs_1d(means[ist, :, 0], gmm_pi[ist, :], np.ones(Ncomp)*sigmas[ist, 0])
-    #e
     e_values = np.ones((gmm_pi.shape[0], 3))*np.nan
+    actual_perc_dm = np.ones((gmm_pi.shape[0], 3))*(np.nan)
+    actual_perc_e = np.ones((gmm_pi.shape[0], 3))*np.nan
+    
+    Ncomp = gmm_pi.shape[1]
+    
     for ist in range(gmm_pi.shape[0]):
-        e_values[ist, :], _ = compute_percentile_given_gmm_inputs_1d(means[ist, :, 1], gmm_pi[ist, :], np.ones(Ncomp)*sigmas[ist, -1])
-    return dm_values, e_values
+        if not nanmask[ist]: #if nan dont do the pct comp
+            #dm
+            dm_values[ist, :], actual_perc_dm[ist, :]  = compute_percentile_given_gmm_inputs_1d(means[ist, :, 0], gmm_pi[ist, :], np.ones(Ncomp)*sigmas[ist, 0])
+            #E
+            e_values[ist, :], actual_perc_e[ist, :] = compute_percentile_given_gmm_inputs_1d(means[ist, :, 1], gmm_pi[ist, :], np.ones(Ncomp)*sigmas[ist, -1])
+    return dm_values, e_values, actual_perc_dm, actual_perc_e
 
 
 
-        
+###Function that reads in a gridstars file, saves the necessary summary stats in the corresponding input file and deletes the gridstars file (optional)        
+def postprocess_output(fname, fname_save, delete=False):
+    '''
+    Add additional mean and sigma columns to the corresponding input file
+    '''
+    f = h5py.File(fname, 'r')
+    modf = h5py.File(fname_save, 'a')
+    infkeys, outkeys = np.array(list(modf['photometry'].keys())), np.array(list(f.keys()))
+    print('Output keys length:{} Input keys length:{}'.format(len(outkeys), len(infkeys)))
+    extra_inp = ~np.isin(infkeys, outkeys)
+    extra_out = ~np.isin(outkeys, infkeys)
+    if (extra_inp).sum()>0:
+        print('Extra pix in inp', infkeys[extra_inp]) 
+    if (extra_out).sum()>0:
+        print('Extra pix in out', outkeys[extra_out])
+    for ip, pixel in enumerate(f.keys()):
+        try:
+            print(f'{ip}th Pixel {pixel}, Started GMM compute')
+            mean, sigma = get_gmm_mean_sigma(f, pixel)
+            dm_pct, e_pct, actual_perc_dm, actual_perc_e = get_gmm_percentiles(f, pixel)
+            modf['photometry/{}'.format(pixel)]['chisq'] = f[pixel+'/star_chi2'][:]
+            modf['photometry/{}'.format(pixel)]['posterior_mean_dm'] = mean[:, 0]
+            modf['photometry/{}'.format(pixel)]['posterior_mean_E'] = mean[:, 1]
+            modf['photometry/{}'.format(pixel)]['posterior_sigma_dm'] = sigma[:, 0]
+            modf['photometry/{}'.format(pixel)]['posterior_sigma_E'] = sigma[:, 1]
+            modf['photometry/{}'.format(pixel)]['percentiles_dm'] = dm_pct
+            modf['photometry/{}'.format(pixel)]['percentiles_E'] = e_pct
+            modf['photometry/{}'.format(pixel)]['actual_percentiles_dm'] = actual_perc_dm
+            modf['photometry/{}'.format(pixel)]['actual_percentiles_E'] = actual_perc_e
+            print(f'Pixel {pixel}, Ended GMM compute')
+        except Exception as e:
+            print(repr(e), fname, pixel)
+    f.close()
+    modf.close()
+    if delete:
+        os.remove(fname)
+    return
 '''
 def main_old():
     fnames = np.array(os.listdir(output_dir))
