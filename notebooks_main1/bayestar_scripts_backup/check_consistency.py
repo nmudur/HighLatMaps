@@ -11,6 +11,7 @@ def older_criterion_mask(ftest, pixel):
     np.isfinite(ftest['photometry'][pixel]['gaia.parallax']) * np.isfinite(ftest['photometry'][pixel]['gaia.parallax_error'])
 
 def check_consistency(ftest, pixel):
+    #Checks that the criterion for considering gaia plxs is not vastly different than just ruwe<1.4
     newmask = (ftest['photometry/{}'.format(pixel)]['pi_err']<1e6)
     oldfinerr = ftest['photometry/{}'.format(pixel)]['gaia.parallax_error']<1e6
     oldmask = older_criterion_mask(ftest, pixel) * oldfinerr
@@ -20,10 +21,12 @@ def check_consistency(ftest, pixel):
         print('Disc = ', disc)
     
     if (disc>10) * ((100*np.sum(newmask)/len(newmask))<60):
-        raise ValueError('Odd behavior here')
+        print('Odd behavior here')
     return disc, (100*np.sum(newmask)/len(newmask))
 
 def check_pre_bstar_input_consistency(inpdir):
+    #Scans all files in a directory to identify those with the maximum discrepancy between the old and new criterion
+    # and those with the fewest valid parallaxes. To be run on a directory after running fidelity_north.sbatch
     allf = os.listdir(inpdir)
     fns= []
     for f in allf:
@@ -34,6 +37,7 @@ def check_pre_bstar_input_consistency(inpdir):
     minvalid = 80
     minval_file = None
     disc_file = None
+    manyinvalid = []
     for f in fns:
         fname = os.path.join(inpdir, f)
         print(f'Fn: {f}')
@@ -41,6 +45,8 @@ def check_pre_bstar_input_consistency(inpdir):
         for ip, pixel in enumerate(ftest['photometry/'].keys()):
             print(f'{ip} id: {pixel}')
             disc, newperc = check_consistency(ftest, pixel)
+            if newperc<50:
+                manyinvalid.append((fname, pixel))
             if disc>maxdisc:
                 maxdisc = disc
                 disc_file = (f, pixel)
@@ -49,7 +55,10 @@ def check_pre_bstar_input_consistency(inpdir):
                 minval_file = (f, pixel)
         ftest.close()
         print('##############')
+    
     print('################DIRECTORY SUMMARY######################')
+    print('Invalid pixels', len(manyinvalid))
+    print(*manyinvalid, sep = "\n")
     print(f'Pixel with fewest valid parallax sources: {minval_file[0]}, {minval_file[1]}: {minvalid}')
     print(f'Maximum discrepancy between the old and new criterion: {disc_file[0]}, {disc_file[1]}: {maxdisc}')
     return
@@ -82,6 +91,7 @@ def modify_using_nofid_criterion(inpdir):
 
 
 def check_files_in_dir(inpdir):
+    #Check that all files in a directory can be read
     allf = os.listdir(inpdir)
     fns = []
     for f in allf:
@@ -100,8 +110,11 @@ def check_files_in_dir(inpdir):
     return 
 
 def check_postprocfiles_in_dir(inpdir):
+    #Find the files with the most nan percentiles after postprocessing
+    #Check directory after postproc
     allf = os.listdir(inpdir)
     fns = []
+    manynans = []
     for f in allf:
         if f.endswith('.h5'):
             fns.append(f)
@@ -119,10 +132,18 @@ def check_postprocfiles_in_dir(inpdir):
                 if nanperc>maxnan:
                     maxnan = nanperc
                     maxnanloc = (f, pixel)
+                if nanperc>0.5:
+                    manynans.append((f, pixel))
             ftest.close()
             print(f'File {maxnanloc}, nanperc={100*maxnan}')
         except (RuntimeError, OSError) as e:
             print(f, repr(e))
+        print('##############')
+    
+    print('################DIRECTORY SUMMARY######################')
+    print('Pixels where more than 50% stars have nan percentiles', len(manynans))
+    print(*manynans, sep = "\n")
+    print(f'Pixel with fewest valid parallax sources: {maxnanloc[0]}, {maxnanloc[1]}: {maxnan}')
     return 
 
 def retrieve_discrepant_posteriors(fidelityfile, nofidelityfile):
@@ -148,13 +169,19 @@ def retrieve_discrepant_posteriors(fidelityfile, nofidelityfile):
     disctable = astropy.table.vstack(tablist)
     return disctable
 
+def get_all_stars_in_file(fname):
+    tablist = []
+    for ip, pixel in enumerate(fname['photometry/'].keys()):
+        tablist.append(Table(fname[f'photometry/{pixel}'][:]))
+    return astropy.table.vstack(tablist)
+
 if __name__=='__main__':
-    #Checks the difference between the old and new criteria for files which have the fidelity criteria saved
-    '''
-    INPDIR = '/n/holylfs05/LABS/finkbeiner_lab/Lab/nmudur/bayestar_edr3/input_Pole/'
+    #Checks the difference between the old and new criteria for files which have the fidelity criteria saved 
+    INPDIR = '/n/holylfs05/LABS/finkbeiner_lab/Lab/nmudur/bayestar_edr3/input_fullsky/north/'
     check_pre_bstar_input_consistency(INPDIR)
+
     '''
-    
     #Modifies a bunch of input files so as to set the plx fields according to the old criteria
     INPDIR = '/n/holylfs05/LABS/finkbeiner_lab/Lab/nmudur/bayestar_edr3/input_PoleNoFid/'
     modify_using_nofid_criterion(INPDIR)
+    '''

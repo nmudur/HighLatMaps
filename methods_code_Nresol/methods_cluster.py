@@ -94,7 +94,7 @@ def gp_reconstruction(stars, region, length=5.0, scale=1.0, diagreg='Sigma', ver
 
 
 def gp_reconstruction_pytorch(stars, region, length=np.deg2rad(1), scale=1.0, diagreg='Sigma', verbose=False, return_posterr=True,
-                              train_frac=1.0, kernel='RBF', nu=None):
+                              train_frac=1.0, kernel='RBF', nu=None, gp_mean=None, check_CN=True):
     #UNRESOLVED BUGS: FIX FIRST
     #this assumed you'd already projected into 2D
     #All arguments should then be in radians
@@ -131,11 +131,13 @@ def gp_reconstruction_pytorch(stars, region, length=np.deg2rad(1), scale=1.0, di
         diagreg = torch.diag(torch.tensor(train_sig2, device=device)) + torch.eye(len(ttrain_y))*diagreg
 
     cov_tr += diagreg
-    print('Post Reg CondNo=', torch.linalg.cond(cov_tr))
-    tsolve_prod = torch.linalg.solve(cov_tr, torch.tensor(ttrain_y - torch.mean(ttrain_y), dtype=torch.float, device=device))
+    if check_CN:
+        print('Post Reg CondNo=', torch.linalg.cond(cov_tr))
+    mean = torch.tensor(gp_mean, device=device) if gp_mean is not None else torch.mean(ttrain_y)
+    tsolve_prod = torch.linalg.solve(cov_tr, torch.tensor(ttrain_y - mean, dtype=torch.float, device=device))
     cov_test_train = kernfunc(ttest_x, ttrain_x)
 
-    gprecon = torch.mean(ttrain_y) + torch.matmul(cov_test_train, tsolve_prod)
+    gprecon = mean + torch.matmul(cov_test_train, tsolve_prod)
     if verbose:
         return gprecon.cpu().numpy(), cov_tr.cpu().numpy()
     if return_posterr:
