@@ -137,13 +137,13 @@ def check_postprocfiles_in_dir(inpdir):
             ftest.close()
             print(f'File {maxnanloc}, nanperc={100*maxnan}')
         except (RuntimeError, OSError) as e:
-            print(f, repr(e))
+            print('Corrupted?', f, repr(e))
         print('##############')
     
     print('################DIRECTORY SUMMARY######################')
     print('Pixels where more than 50% stars have nan percentiles', len(manynans))
     print(*manynans, sep = "\n")
-    print(f'Pixel with fewest valid parallax sources: {maxnanloc[0]}, {maxnanloc[1]}: {maxnan}')
+    print(f'Pixel with the most nan percentiles: {maxnanloc[0]}, {maxnanloc[1]}: {maxnan}')
     return 
 
 def retrieve_discrepant_posteriors(fidelityfile, nofidelityfile):
@@ -176,9 +176,14 @@ def get_all_stars_in_file(fname):
     return astropy.table.vstack(tablist)
 
 if __name__=='__main__':
+    '''
     #Checks the difference between the old and new criteria for files which have the fidelity criteria saved 
     INPDIR = '/n/holylfs05/LABS/finkbeiner_lab/Lab/nmudur/bayestar_edr3/input_fullsky/north/'
     check_pre_bstar_input_consistency(INPDIR)
+    '''
+    #Postprocessed file check
+    INPDIR = '/n/holylfs05/LABS/finkbeiner_lab/Lab/nmudur/bayestar_edr3/input_fullsky/north/postprocessed/'
+    check_postprocfiles_in_dir(INPDIR)
 
     '''
     #Modifies a bunch of input files so as to set the plx fields according to the old criteria

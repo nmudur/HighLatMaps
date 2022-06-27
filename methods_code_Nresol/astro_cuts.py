@@ -185,7 +185,7 @@ def parallax_pm_combinedcut(df, parsigthresh, pmsigthresh):
 
     return np.logical_or(parmask, pmmask)
 
-
+#And
 def parallax_pm_combinedcut_and(df, parsigthresh, pmsigthresh, conditional=False):
     '''
     True if BOTH
@@ -409,7 +409,7 @@ def parallaxcut_abs(df, parsigthresh, dr=2, conditional=True):
             return parmask
 
 
-
+#Changed
 def parallax_pm_combinedcut_or(df, parsigthresh, pmsigthresh, dr=2, conditional=True):
     # earlier cuts included negative parallax
     #pm * 𝜹pm = pmra * 𝜹pmra + pmdec * 𝜹pmdec
@@ -436,17 +436,13 @@ def parallax_pm_combinedcut_or(df, parsigthresh, pmsigthresh, dr=2, conditional=
             return parmask + pmmask
 
     if dr == 3:
-        parmask = (df['gaia_edr3.parallax'].to_numpy() - parsigthresh * df['gaia_edr3.parallax_error'].to_numpy()) > 0
+        parmask = (df['plx'].to_numpy() - parsigthresh * df['plx_err'].to_numpy()) > 0
 
         if not conditional:
-            return parmask + pmmask
+            return parmask + pmmask #Exclude objects which have both plx AND pm within some sigmas of 0
         if conditional:
-            pass_gaia_cuts = np.logical_and(gaia_vispd_edr3(df), gaia_ruwe_edr3(df))  # "reliable" gaia information
-            reliably_bad_plx = np.logical_and(pass_gaia_cuts,
-                                              ~parmask)  # True if it's a reliable gaia reading AND has a parallax within 1 sigma of 0
-            parmask = np.logical_or(~pass_gaia_cuts, ~reliably_bad_plx)
-            # True if either an 'unreliable' gaia reading OR is reliably bad
-            return parmask + pmmask #Retain if it either has a high parallax OR a high proper motion
+            pass_gaia_cuts = df['plx_err'].to_numpy()<1e6 # reliable" gaia information: using fidelity and RUWE
+            return parmask + pmmask + np.logical_not(pass_gaia_cuts) #Exclude if it has a tiny parallax AND a tiny proper motion AND reliable Gaia info
 
         
         

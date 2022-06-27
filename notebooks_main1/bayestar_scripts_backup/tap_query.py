@@ -231,19 +231,22 @@ def process_save_fidelity(filename):
     return
 
 def process_save_fidelity_faster(filename):
-    #Filename: this is the already-copied-into-input file that you need to grab the source ids of and query fidelity and fill
+    # Filename: this is the already-copied-into-input file that you need to grab the source ids of and query fidelity and fill
+    # Does a single query call for all pixels in the file, earlier you had a single query call per pixel
     # the pi, pi_err columns accordingly
     # Handles missing sources 
     modf = h5py.File(filename, 'a')
-    source_ids = []
+    source_ids, ruwes = [], []
     lower_idx = np.zeros(len(modf['photometry'].keys()), dtype=int)
 
     for ip, pixel in enumerate(modf['photometry'].keys()):
         source_ids.append(np.array(modf['photometry/{}'.format(pixel)]['gaia.source_id']))
+        ruwes.append(np.array(modf['photometry/{}'.format(pixel)]['gaia.ruwe']))
         if ip<len(modf['photometry'].keys())-1:
             lower_idx[ip+1] = lower_idx[ip]+len(np.array(modf['photometry/{}'.format(pixel)]['gaia.source_id']))
     print(lower_idx)
     source_ids = np.hstack(source_ids)
+    ruwes = np.hstack(ruwes)
     print('Pre query', flush=True)
     qcount = 0
     while qcount<20:
@@ -255,15 +258,15 @@ def process_save_fidelity_faster(filename):
             time.sleep(60)
         else:
             qcount+=1
-            break
-    print('Discrepancy: Sources in input, and sources for which outputs are available', len(source_ids), np.sum(source_ids==0), len(fidtable))
+            break #if it goes all the way till the end without querying then fidtable wont exist and you'll get an error in subsequent lines
+    print('Discrepancy: Sources in input, Sources in input with sid=0, and sources for which outputs are available', len(source_ids), np.sum(source_ids==0), len(fidtable))
     fidarr = fidtable['fidelity_v2'].data.filled(fill_value=np.nan)
 
     sidinfidoutmask = np.isin(source_ids, fidtable['source_id'].data.filled(fill_value=-999)) #Sources for which fidelity classifier returns an output
     print('Check no nans', np.isnan(fidarr).sum())
     fidall = np.zeros(len(source_ids))
     fidall[sidinfidoutmask] = fidarr
-    idx_gaia = fidall>0.5
+    idx_gaia = (fidall>0.5) * (ruwes<1.4)
     print(f'pixid {pixel}: Good:{np.sum(idx_gaia)}, All: {len(idx_gaia)}')
     print('Sources, Unique, Table length', len(source_ids), len(np.unique(source_ids)), len(fidtable['source_id'].data.filled(fill_value=-999)))
 
@@ -275,14 +278,17 @@ def process_save_fidelity_faster(filename):
             upper_idx = lower_idx[ip+1] if (ip<len(modf['photometry'].keys())-1) else len(idx_gaia)
             print(f'{ip}, {pixel}: low_idx={lower_idx[ip]}, upp_idx={upper_idx}')
             pix_criteria = idx_gaia[lower_idx[ip]:upper_idx]
+            pix_fids = fidall[lower_idx[ip]:upper_idx]
 
             plxnew = np.array(modf['photometry/{}'.format(pixel)]['pi'])
             plxerrnew = np.array(modf['photometry/{}'.format(pixel)]['pi_err'])
-            print('Preassigning Length Check: ', len(pix_criteria), len(plxnew))
+            #print Preassigning Length Check
+            assert len(pix_criteria) == len(plxnew)
             plxnew[pix_criteria] = modf['photometry/{}'.format(pixel)]['gaia.parallax'][pix_criteria]
             plxerrnew[pix_criteria] = modf['photometry/{}'.format(pixel)]['gaia.parallax_error'][pix_criteria]
             modf['photometry/{}'.format(pixel)]['pi'] = plxnew
-            modf['photometry/{}'.format(pixel)]['pi_err'] = plxerrnew
+            modf['photometry/{}'.format(pixel)]['pi_err'] = plxerrnew 
+            modf['photometry/{}'.format(pixel)]['fidelity_v2'] = pix_fids
             print(f'Assigned: idx_gaia= {np.sum(idx_gaia)}. Nonzero parallax= ', np.sum(plxnew!=0), np.sum(modf['photometry/{}'.format(pixel)]['pi']!=0), np.sum(modf['photometry/{}'.format(pixel)]['pi_err']!=1e10))
             print('##############################')
             print('{}: Parallax used for :{:.3f} % sources'.format(pixel, 100*np.sum(modf['photometry/{}'.format(pixel)]['pi_err']<1e6)/len(modf['photometry/{}'.format(pixel)]['pi_err'])))
@@ -290,6 +296,7 @@ def process_save_fidelity_faster(filename):
 
         except Exception as e:
             print(repr(e), filename, pixel)
+            raise e
     modf.close()
     return
 '''

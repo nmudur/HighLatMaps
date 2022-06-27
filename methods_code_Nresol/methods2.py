@@ -59,7 +59,7 @@ def gnupartilewise_new(coords, recon_func_name, cuts_list, kwargs_dict, runname,
             if not os.path.exists(tmpdir+'recon_{}.hdf5'.format(tile)):
                 missing.append(tile)
         print('Only reconstructing for missing {} tiles'.format(len(missing)))
-        tilefile = tmpdir + 'tiles_jhash{}.txt'.format(jhash)
+        tilefile = tmpdir + 'tiles_jhash{}.txt'.format(jhash) 
         with open(tilefile, 'w') as ft:
             for tile in missing:
                 ft.write(str(tile) + '\n')
