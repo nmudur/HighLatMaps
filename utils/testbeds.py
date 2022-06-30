@@ -222,6 +222,20 @@ def get_testbed_dict(name, Nresol=2048):
         
         rot= [0, 90]
         xsize= 5000
+    elif name=='FullSky_Bayestar_babsgt19':
+        assert Nresol==2048
+        b17map = get_bayestar2017_map()
+        notnan = ~np.isnan(b17map)
+        coords = np.arange(hp.nside2npix(2048))
+        lbang = hp.pix2ang(2048, coords, lonlat=True)
+        latmask = (np.abs(lbang[1])>19)
+        assert len(coords) == len(b17map)
+        notnan *= latmask
+        pix2k = coords[notnan]
+        
+        rot= [0, 90]
+        xsize= 5000
+
     else:
         raise NotImplementedError
     return {'name':name, 'coords': pix2k, 'Nresol': Nresol, 'rot': rot, 'xsize': xsize}
