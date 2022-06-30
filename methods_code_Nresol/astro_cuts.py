@@ -10,7 +10,7 @@ def distmod_median_cut(df, mindm=8):
 def distmod_median_cut_corr(df, minpc=200):
     #minpc: scale height in pc
     dist_median = 10**(1+ (df['dm_median'].to_numpy()/5))
-    return dist_median*np.sin(np.deg2rad(df['b'].to_numpy())) > minpc
+    return dist_median*np.sin(np.deg2rad(np.abs(df['b'].to_numpy()))) > minpc
 
 def e_nonneg_cut(df):
     return df['E_median'].to_numpy() + df['E_sigma'].to_numpy() > 0

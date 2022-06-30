@@ -14,16 +14,12 @@ from utils_circpatch import *
 from do_recon_tilewise import *
 from methods_cluster import *
 
-##Eval-level (probably put in another module): basically looptilewise / gnupartilewise which are called as func(coords)
-#equivalent of nearest
 
 
 code_dirname = '/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/methods_code_Nresol/'
 
 
-##Full region-level functions: Inputs: coords, recon_func_name, cuts_list, kwargs_dict: recon_kwargs, outer_kwargs (for region level functions)
-#Call the tile-level functions or work on tiling internally. Stars are only queried here if tiling is done here.
-    
+  
 def gnupartilewise_new(coords, recon_func_name, cuts_list, kwargs_dict, runname, sleep=180, mem=2000, compile_pickle=True):
     '''
     coords: Pixels at Nsideresol (default=2048)
@@ -52,7 +48,7 @@ def gnupartilewise_new(coords, recon_func_name, cuts_list, kwargs_dict, runname,
     jhash = randint(100, 999)
     
     #Generate list of tiles
-    if os.path.exists(tmpdir + 'tiles.txt'): #only relevant if this is a staggered run (ran the same command twice with diff mem requests)
+    if os.path.exists(tmpdir + 'tiles.txt'): #only relevant if this is a staggered run (eg: ran the same command twice with diff mem requests)
         print('Tiles file already exists')
         missing = []
         for tile in tiles:
@@ -63,8 +59,6 @@ def gnupartilewise_new(coords, recon_func_name, cuts_list, kwargs_dict, runname,
         with open(tilefile, 'w') as ft:
             for tile in missing:
                 ft.write(str(tile) + '\n')
-
-
 
     else:
         tilefile = tmpdir + 'tiles.txt'
@@ -80,19 +74,19 @@ def gnupartilewise_new(coords, recon_func_name, cuts_list, kwargs_dict, runname,
                   'cuts_list': cuts_list,
                   'tiles': tiles,
                   'recon_func_name': recon_func_name}
-    #Added later: if you don't want to use the default STARDIR. Eg: For outer_gaia check.
+    
+    #Added later: if you don't want to use the default STARDIR. For the rerun posteriors
     if 'stars_presaved' in kwargs_dict['outer_kwargs'].keys():
         if isinstance(kwargs_dict['outer_kwargs']['stars_presaved'], str):
             print('Using dir ', kwargs_dict['outer_kwargs']['stars_presaved'])
         
-        stars_presaved = kwargs_dict['outer_kwargs']['stars_presaved']
+        stars_presaved = kwargs_dict['outer_kwargs']['stars_presaved'] #Dictionary with tile to h5 file mapping
         recon_info.update({'stars_presaved': kwargs_dict['outer_kwargs']['stars_presaved']})
 
     if os.path.exists(tmpdir + 'recon_info.pkl'):
         print('Tmp pickle already exists')
     else:
         pickle.dump(recon_info, open(tmpdir + 'recon_info.pkl', 'wb'))
-
 
 
     # subprocess to .sh

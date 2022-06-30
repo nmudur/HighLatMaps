@@ -1,13 +1,11 @@
-import healpy
 import numpy as np
 import healpy as hp
 import pickle
 import h5py
 import os
-#from astropy-healpix import HEALPix
 
 '''
-Funcs for creating and checking (l, b) circles around hp nside centers
+Functions for healpix patch handling logistics
 '''
 
 def check_all_verts_in_circle_pix(nsidetile, tile, radius_fac):
@@ -75,29 +73,8 @@ def get_lbbeam_idx_for_tile(nsidetile, tile, radius_fac, Nsideresol=2048, dirnam
         np.save(dirname+'region_'+str(tile), region)
         pickle.dump({'nsidetile': nsidetile, 'tile': tile, 'cen_lb': hp.pixelfunc.pix2ang(nsidetile, tile, lonlat=True),
                      'radius_region': np.rad2deg(radius_rad), 'radius_stars': np.rad2deg(radius_rad)+25/60}, open(dirname+'patchdata_'+str(tile)+'.pkl', 'wb'), protocol=protocol)
-    return region #replace with h5py/fits and figure out how to put info in m
-'''
-#OLD pixelvec which misses or overcounts some of the pixels
-def get_pixelvec_for_tile(nsidetile, tile, dirname=None, protocol=pickle.HIGHEST_PROTOCOL):
-    #saves / returns region matrix in vectors for pixel = tile at Nsidetile
-    #radius_deg in the pickle is irrelevant if you're note saving the pickle
+    return region 
 
-    pixcenvec = np.array(hp.pixelfunc.pix2vec(nsidetile, tile))
-    corners = healpy.boundaries(nsidetile, tile, step=1).T
-    regpix = hp.query_polygon(2048, corners, inclusive=True) #maybe do query disc and then remove extras?
-    region = hp.pixelfunc.pix2vec(2048, regpix)
-    region = np.vstack(region).T
-    radius_deg = np.rad2deg(np.max(np.arccos(np.matmul(pixcenvec, corners.T)))) + 25/60
-    #radius_rad = #np.max( of np.abs( of pixcenvec - corners plus the 25/60 for 5 arcmin thing
-
-    if dirname is not None:
-        np.save(dirname+'region_'+str(tile), region)
-        pickle.dump({'nsidetile': nsidetile, 'tile': tile, 'cen_lb': hp.pixelfunc.pix2ang(nsidetile, tile, lonlat=True),
-                     'radius_stars_deg': radius_deg}, open(dirname+'patchdata_'+str(tile)+'.pkl', 'wb'), protocol=protocol)
-    return region #replace with h5py/fits and figure out how to put info in m
-
-
-'''
 
 def get_largepix_for_smallpix(pixhigh, highresnside, lowresnside):
     '''
@@ -131,7 +108,7 @@ def get_pixelvec_for_tile(nsidetile, tile, Nsideresol, dirname=None, protocol=pi
     if dirname is not None:
         #fix for saving later
         pixcenvec = np.array(hp.pixelfunc.pix2vec(nsidetile, tile))
-        corners = healpy.boundaries(nsidetile, tile, step=1).T
+        corners = hp.boundaries(nsidetile, tile, step=1).T
         radius_deg = np.rad2deg(np.max(np.arccos(np.matmul(pixcenvec, corners.T)))) + 25 / 60
         np.save(dirname+'region_'+str(tile), region)
         pickle.dump({'nsidetile': nsidetile, 'tile': tile, 'cen_lb': hp.pixelfunc.pix2ang(nsidetile, tile, lonlat=True),
@@ -192,8 +169,8 @@ def get_Nsideresol_healpix_map_from_gnuparpatches_safe(dirname, Nsideresol=2048,
 
     print('Ckp')
     selpix = []
-    reconmap = np.zeros(hp.pixelfunc.nside2npix(Nsideresol))
-    varmap = np.zeros(hp.pixelfunc.nside2npix(Nsideresol))
+    reconmap = np.ones(hp.pixelfunc.nside2npix(Nsideresol))*hp.UNSEEN
+    varmap = np.ones(hp.pixelfunc.nside2npix(Nsideresol))*hp.UNSEEN
     corr = []
     for tile in tiles:
         try:
