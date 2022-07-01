@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #SBATCH --ntasks=48
-#SBATCH -t 0-03:00
+#SBATCH -t 0-00:45
 #SBATCH -p test
 #SBATCH --mem=0
 #SBATCH --nodes=1
