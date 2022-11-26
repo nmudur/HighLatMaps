@@ -283,7 +283,7 @@ def preproc_get_acc_intgn(maps, names, reconpix, maskingname, smooths, savname, 
     if save_smoothed:
         pickle.dump(dustmaps_val, open(savname+'_smoothed.pkl', 'wb'))
     
-    if error_args['errortype']=='Sampling': #not checked
+    if error_args['errortype']=='Sampling': 
         accs_all = []
         for idx, dustmap in enumerate(dustmaps_val):
             accs=get_acc_intg_nside2048_batch(dustmap[indices].reshape((1, -1)), maskingname, n_bootstrap=error_args['n_bootstrap'], device="cpu")

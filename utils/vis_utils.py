@@ -27,7 +27,7 @@ from do_recon_tilewise import *
 sfd = SFDQuery()
 
 
-def get_bayestar2017_map(return_sigma=False):
+def get_bayestar2017_map(return_sigma=False, conversion_factor=0.856):
     if platform=='linux':
         bstarpath = '/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/reference_maps/'
     else:
@@ -46,16 +46,17 @@ def get_bayestar2017_map(return_sigma=False):
     pix2048 = hp.pixelfunc.ang2pix(2048, coords_lb[:, 0], coords_lb[:, 1], lonlat=True)
     b17map = np.empty(hp.pixelfunc.nside2npix(2048))
     b17map[pix2048] = b17mean
+    print(f'Multiplying by the EBV conversion factor of {conversion_factor} derived from E(g-r) relation (Eq1)')
     if return_sigma:
         b17sigma_map = np.empty(hp.pixelfunc.nside2npix(2048))
         b17sigma_map[pix2048] = b17sigma
-        return b17map, b17sigma_map
+        return conversion_factor*b17map, conversion_factor*b17sigma_map
     else:
-        return b17map
+        return conversion_factor*b17map
 
     
     
-def get_bayestar2019_map():
+def get_bayestar2019_map(conversion_factor=0.856):
     print(platform)
     if platform=='linux':
         bstarpath = '/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/reference_maps/'
@@ -68,8 +69,10 @@ def get_bayestar2019_map():
 
     pix2048 = hp.pixelfunc.ang2pix(2048, coords_lb[:, 0], coords_lb[:, 1], lonlat=True)
     b19map = np.empty(hp.pixelfunc.nside2npix(2048))
+    print(f'Multiplying by the EBV conversion factor of {conversion_factor} derived from E(g-r) relation (Eq1)')
+
     b19map[pix2048] = b19mean
-    return b19map
+    return conversion_factor*b19map
 
 
 def get_sfd_map():
@@ -81,13 +84,14 @@ def get_sfd_map():
     print('Multiplying by the blue tip correction factor of 0.86')
     return sfdmap #value at index p is the value of SFD queried at pixel p at Nside=2048
 
-def get_gnilc_map():
+def get_gnilc_map(conversion_factor=1.0):
     pix2048 = np.arange(hp.pixelfunc.nside2npix(2048))
     selpixang = hp.pixelfunc.pix2ang(2048, pix2048, lonlat=True)
     coords = SkyCoord(l=selpixang[0] * units.deg, b=selpixang[1] * units.deg, frame='galactic')
     gnilcmap = np.empty(hp.pixelfunc.nside2npix(2048))
     gnilcmap[pix2048] = gnilc(coords)
-    return gnilcmap
+    print(f'Multiplying by the EBV conversion factor of {conversion_factor}, the slope of SFD*0.86 with GNILC at pixhigh')
+    return conversion_factor*gnilcmap
 
 '''
 def get_accdict_with_references(resultdictnames, runtitles, n_bootstrap=1):
@@ -205,6 +209,17 @@ def plot_maps_comparison(testbedlist, compmaps, norm='SFD', figsize=(20, 20), kw
         if norm=='SFD':
             vmin, vmax = np.min(sfdmap[reg['coords']]), np.max(sfdmap[reg['coords']])
             pargs = {'min': vmin, 'max': vmax}
+        elif norm=='minmax':
+            assert 'norm_percs' in kwargs_dict.keys()
+            minperc, maxperc = kwargs_dict['norm_percs']
+            irefmap = kwargs_dict['peg_to_map_idx']
+            
+            refmap = compmaps[irefmap][1]
+            arr = hp.gnomview(refmap, rot=reg['rot'], xsize =reg['xsize'], return_projected_map=True, no_plot=True)
+            assert np.sum(arr==hp.UNSEEN)==0
+            vmin, vmax = np.percentile(arr, minperc), np.percentile(arr, maxperc)
+            print('Color pegged to Map, Min, Max', compmaps[irefmap][0], vmin, vmax)
+            pargs = {'min': vmin, 'max': vmax}
         else:
             pargs = {'norm': 'hist'}
             
@@ -213,8 +228,9 @@ def plot_maps_comparison(testbedlist, compmaps, norm='SFD', figsize=(20, 20), kw
                 plt.axes(ax[cix])
             else:
                 plt.axes(ax[rix, cix])
-            hp.gnomview(mtup[1], rot=testbedlist[rix]['rot'], hold=True, title=reg['name']+': '+mtup[0], xsize=testbedlist[rix]['xsize'], **pargs)
-    #plt.suptitle('Comparison')
+            resinfo = False if cix==0 else True
+            hp.gnomview(mtup[1], rot=testbedlist[rix]['rot'], hold=True, title=reg['name']+': '+mtup[0], xsize=testbedlist[rix]['xsize'], notext=resinfo, **pargs)
+    plt.tight_layout()
     if 'savefig' in kwargs_dict.keys():
         fig.savefig(kwargs_dict['savefig'], dpi=200)
     plt.show()
@@ -549,7 +565,7 @@ def plot_noise_vs_latitude(latwise_offsets, kwargs):
     figsize=kwargs['figsize'] if 'figsize' in kwargs.keys() else (6, 6)
     
     plt.figure(figsize=figsize)
-    cycle = ['c', 'k', 'r', 'g', 'y'] #plt.rcParams['axes.prop_cycle'].by_key()['color']
+    cycle = ['b', 'k', 'r', 'g', 'y'] #plt.rcParams['axes.prop_cycle'].by_key()['color']
     alpha=1
     for il, latlist in enumerate(latwise_offsets):
         assert len(latlist) == len(plot_map_names)
@@ -575,11 +591,11 @@ def plot_noise_vs_latitude(latwise_offsets, kwargs):
     
     plt.xlabel('Latitude')
     plt.ylabel(r'$\sigma$(Map - SFD)')
-    plt.title('Std of Map- SFD in Nside=32 pixels in a given region')
+    plt.title('Std of Map- SFD in Nside=32 pixels at different latitudes')
     if 'ylim' in kwargs.keys():
         plt.ylim(kwargs['ylim'])
     if 'savefig' in kwargs.keys():
-        plt.savefig(kwargs['savefig'])
+        plt.savefig(**kwargs['savefig'])
     
     plt.show()
     return

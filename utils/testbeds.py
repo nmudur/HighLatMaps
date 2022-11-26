@@ -35,10 +35,10 @@ def get_pixels_in_Bayestar_footprint(Nside):
             covered_tiles.append(tile)
     return np.array(covered_tiles)
 
-def get_pixels_in_recon61xbayestar_footprint(Nside):
+
+def get_pixels_in_recon61xbayestar_footprint(Nside, picklefile='/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/notebooks_main1/fullsky_runs/footprints/ftp_minimal_3_12.pkl'):
     b17map = get_bayestar2017_map()
-    nbmaindir = '/n/holylfs05/LABS/finkbeiner_lab/Everyone/highlat/notebooks_main1/'
-    footprint = pickle.load(open(nbmaindir+'fullsky_runs/footprints/ftp_minimal_3_12.pkl', 'rb'))
+    footprint = pickle.load(open(picklefile, 'rb'))
     #selects only pixels at Nside that are completely contained in the Recon61 footprint
     fptpixels = footprint['pixels']
     fptpixels = fptpixels[~np.isnan(b17map[fptpixels])]
@@ -83,7 +83,7 @@ def get_subset_pixels_at_latitude(Nsidetile, tile_set, latitude, Numoutput='max'
     return output_subset
 
 
-def get_testbeds_latitudewise(latitude, footprint, Numoutput, Nresol=2048):
+def get_testbeds_latitudewise(latitude, footprint, Numoutput, Nresol=2048, fargs={}):
     '''
     :param latitude:
     :param footprint: footprint function
@@ -92,7 +92,7 @@ def get_testbeds_latitudewise(latitude, footprint, Numoutput, Nresol=2048):
     '''
     assert Nresol==2048 #for now since all the footprints are defined in terms of 2048
     NSIDETILE = 32
-    footprint_tiles = footprint(NSIDETILE)
+    footprint_tiles = footprint(NSIDETILE, **fargs)
     tiles = get_subset_pixels_at_latitude(NSIDETILE, footprint_tiles, latitude, Numoutput)
     assert len(tiles)==np.unique(len(tiles)) #make sure no duplicate patches
     output = []
