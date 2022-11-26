@@ -93,103 +93,16 @@ def gaussiankernel_reconstruction_effective_spherical3_blocks(stars, region, len
         return recon_mean, recon_var
 
     
-def gaussiankernel_reconstruction_effective_spherical3_blocks_outlier_removal(stars, region, length=np.deg2rad(5 / 60), scale=1.0,
-                                                              no_invvar=False, sigref=None, numblocks=4,
-                                                              return_weights=False, return_numeffstars=False, outlier_threshold=100, sigmas=5, outlier_itns=5):
-    '''
-    stars: Nstar x 5: First 3: unit vector coords, C3: Emedian, C4: Esigma
-    region: Npixel x 3: Npixel are the pixels at Nsideresol (=2048, usually)
-    length: smoothing length in RADIANS
-    scale: height of the kernel at distance 0
-    no_invvar: True if you want an error-agnostic smoothing
-    sigref: Weight is exp(-rdist^2/(2*l^2))/(sigma_star^2 + sigma_ref^2)
-    numblocks: matrix mult subdivisions
-    return_weights: return weight matrix
-    return_numeffstars: return number of stars that contributed > 1% of the weight matrix for each pixel
-    '''
-    # BLocks of matrices
-    assert stars.shape[1] == 5
-    assert region.shape[1] == 3
-    train_x = np.hstack([stars[:, 0].reshape((-1, 1)), stars[:, 1].reshape((-1, 1)), stars[:, 2].reshape((-1, 1))])
-    train_y = stars[:, 3]
-    trainvar = stars[:, 4] ** 2
 
-    block_indices = np.array_split(np.arange(region.shape[0], dtype=int),
-                                   numblocks)  # ineff since dont need full idxlist
-    recon_mean, recon_var = np.zeros(region.shape[0]), np.zeros(region.shape[0])
-
-    numeffstars_all = []
-    for b in range(numblocks):
-        test_x = region[block_indices[b], :]
-        cossepmat = np.matmul(test_x, train_x.T)  # cos (ang sep): Npix_test x Nstar
-        neighbormask = cossepmat > np.cos(5 * length)
-        wmat = np.zeros(cossepmat.shape)
-
-        if not no_invvar:  # no_invvar = False => So inv var weighting
-            if sigref is None:  # No ref sigma
-                for p in range(test_x.shape[0]):
-                    wmat[p, neighbormask[p, :]] = se_kernel(
-                        np.arccos(np.minimum(cossepmat[p, neighbormask[p, :]], 1.0)), length, scale) / trainvar[
-                                                      neighbormask[p, :]]
-
-            else:  # sigref
-                sigrefsq = sigref ** 2
-                for p in range(test_x.shape[0]):
-                    starmask = neighbormask[p, :]
-                    itc_curr=0
-                    while np.sum(starmask)>outlier_threshold and itc_curr<outlier_itns:
-                        dbnmedian = np.median(train_y[starmask])
-                        dbnsigma = np.std(train_y[starmask], ddof=1)
-                        valsnew = np.ones(np.sum(starmask))
-                        outmask = np.greater(np.abs(train_y[starmask]-dbnmedian), sigmas*dbnsigma)
-                        valsnew[outmask] = 0
-                        starmask[starmask] = valsnew #mask out stars that are more than sigmas*dbnsigma away from the median distribution
-                        
-                        itc_curr+=1
-                        print(f'itc_curr={itc_curr}, dbn_median={np.round(dbnmedian, 3)}, dbnsig={np.round(dbnsigma, 3)}, maxoutlier={np.round(np.max(np.abs(train_y[starmask]-dbnmedian)), 3)}, outliers_removed={np.sum(outmask), np.sum(starmask)}')
-                        
-                        
-                    
-                    neighbormask[p, :] = starmask
-                    wmat[p, neighbormask[p, :]] = se_kernel(
-                        np.arccos(np.minimum(cossepmat[p, neighbormask[p, :]], 1.0)), length, scale) / (
-                                                              trainvar[neighbormask[p, :]] + sigrefsq)
-
-        else:  # no Invvar
-            for p in range(test_x.shape[0]):
-                wmat[p, neighbormask[p, :]] = se_kernel(np.arccos(np.minimum(cossepmat[p, neighbormask[p, :]], 1.0)),
-                                                        length, scale)
-        # Add tests for pix 0??
-        normalization = np.sum(wmat, axis=1).reshape((-1, 1))
-        print('No stars for pix', np.sum(np.sum(neighbormask, axis=1) == 0) / len(block_indices[b]))
-        wmat = wmat / normalization
-        # or how many get more than the analytical xsigma weight?
-        sig1thresh = se_kernel(length, length, scale) / normalization
-        if not no_invvar:
-            sig1thresh = sig1thresh / (np.median(trainvar).reshape((-1, 1)) + sigrefsq)
-        numeffstars = np.sum(wmat > sig1thresh, axis=1)
-        print(
-            'Stars Contributing >1sigma/N(pixel) of the weight matrix: Min stars = {}, 16%ile = {:.1f}, median stars = {:.1f}, 84%ile = {:.1f}, max stars = {}'.format(
-                np.min(numeffstars), np.percentile(numeffstars, 16), np.median(numeffstars),
-                np.percentile(numeffstars, 84), np.max(numeffstars)))
-        recon_mean[block_indices[b]] = np.matmul(wmat, train_y)
-        recon_var[block_indices[b]] = np.matmul(wmat ** 2, trainvar)
-        numeffstars_all.append(numeffstars)
-
-    if return_weights:
-        assert numblocks == 1
-        if return_numeffstars:
-            return recon_mean, recon_var, wmat, numeffstars_all
-        else:
-            return recon_mean, recon_var, numeffstars_all
-    elif return_numeffstars:
-        return recon_mean, recon_var, numeffstars_all
-    else:
-        return recon_mean, recon_var
     
 
 
 #GP related + Older code####################################################
+
+#def gaussiankernel_reconstruction_effective_spherical3_blocks_outlier_removal(stars, region, length=np.deg2rad(5 / 60), scale=1.0,...)
+
+
+
 class myKernel(torch.nn.Module):
     def __init__(self, lengthscale=None):
         self.training = False
