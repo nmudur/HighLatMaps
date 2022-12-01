@@ -14,6 +14,7 @@ notebooks_test/*
 plots/*
 reference_maps/*
 runs/*
+notebooks_main1/spectra_matched/*
 notebooks_main1/fullsky_runs/*
 reconmaps/*
 
@@ -37,15 +38,12 @@ notebooks_main1/2_17_Posteriors.ipynb
 *__pycache__*
 
 #Exceptions to save
-!notebooks_main1/spectra_matched/7_4_RerunSouthTest.ipynb
-!notebooks_main1/spectra_matched/7_4_SpecChecksRerunNorth.ipynb
+!notebooks_main/2_12_SpecTrainWise.ipynb
+!notebooks_main/7_1_SpecTrainSDSS_New.ipynb
+!notebooks_main/4_5_zDbn-Copy1.ipynb
 !notebooks_test/11_17_ComputeFinalACC.ipynb
 !notebooks_test/11-17_PaperPlotsBias.ipynb
 !notebooks_test/11-20_PaperPlotsACC_Bootstrapped.ipynb
 !notebooks_test/11_20_presave_Bayestar2017.ipynb
-!notebooks_test/2_22_ExamineStellarDensity-Postcuts.ipynb
-!notebooks_test/2_26_presave_Bayestar2019.ipynb
 !notebooks_test/3_8_PaperPlots_ACC.ipynb
-!notebooks_test/4_3_ACC_CheckB19.ipynb
-!notebooks_test/4_3_ACC_CheckNoise.ipynb
 *.DS_Store
