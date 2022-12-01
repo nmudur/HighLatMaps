@@ -1,3 +1,6 @@
+## Written by Core Francisco Park
+
+
 import numpy as np
 import asdf
 import os
@@ -244,7 +247,7 @@ def smooth_rotate_map(dustmap,arcmins=[30],rots=[0,180]):
     return np.stack(outmaps,axis=0).astype(np.float64)
 
 
-
+## NM Additions
 def preproc_get_acc_intgn(maps, names, reconpix, maskingname, smooths, savname, error_args, 
                          save_smoothed=True, save_acc_intgn=True):
     '''
