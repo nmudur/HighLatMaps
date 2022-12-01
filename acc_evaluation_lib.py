@@ -1,4 +1,4 @@
-## Written by Core Francisco Park
+## Written by Core Francisco Park (corefranciscopark@g.harvard.edu cfpark00@gmail.com)
 
 
 import numpy as np
