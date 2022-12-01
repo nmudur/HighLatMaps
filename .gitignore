@@ -14,7 +14,7 @@ notebooks_test/*
 plots/*
 reference_maps/*
 runs/*
-#notebooks_main1/spectra_matched/*
+notebooks_main1/spectra_matched/*
 notebooks_main1/fullsky_runs/*
 reconmaps/*
 
