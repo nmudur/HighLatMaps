@@ -44,9 +44,8 @@ notebooks_main1/2_17_Posteriors.ipynb
 !notebooks_main/4_5_zDbn-Copy1.ipynb
 !notebooks_test/11_17_ComputeFinalACC.ipynb
 !notebooks_test/11-17_PaperPlotsBias.ipynb
-!notebooks_test/11-20_PaperPlotsACC_Bootstrapped.ipynb
 !notebooks_test/11_20_presave_Bayestar2017.ipynb
+!notebooks_test/11_20_PaperPlots_ACC_Bootstrapped.ipynb
 !notebooks_test/3_8_PaperPlots_ACC.ipynb
 !notebooks_test/11_17_ComputeFinalACC-Copy1.ipynb
-!notebooks_test/11-20_PaperPlotsACC_Bootstrapped.ipynb
 *.DS_Store
