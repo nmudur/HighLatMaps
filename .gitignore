@@ -11,7 +11,8 @@ data/*
 methods_code/*
 notebooks/*
 notebooks_test/*
-notebooks_main1/*
+notebooks_main1/tmp/*
+#notebooks_main1/*
 plots/*
 reference_maps/*
 runs/*
