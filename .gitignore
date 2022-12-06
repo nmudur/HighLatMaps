@@ -11,6 +11,7 @@ data/*
 methods_code/*
 notebooks/*
 notebooks_test/*
+notebooks_main1/*
 plots/*
 reference_maps/*
 runs/*
@@ -42,6 +43,8 @@ notebooks_main1/2_17_Posteriors.ipynb
 !notebooks_main/2_12_SpecTrainWise.ipynb
 !notebooks_main/7_1_SpecTrainSDSS_New.ipynb
 !notebooks_main/4_5_zDbn-Copy1.ipynb
+!notebooks_main1/6_28_FID+RUWE-FullSky_15.ipynb
+!notebooks_main1/6_28_FID+RUWE-FullSky_6-1.ipynb
 !notebooks_test/11_17_ComputeFinalACC.ipynb
 !notebooks_test/11-17_PaperPlotsBias.ipynb
 !notebooks_test/11_20_presave_Bayestar2017.ipynb
