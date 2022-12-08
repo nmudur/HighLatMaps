@@ -7,6 +7,7 @@ This repository contains code for Stellar Reddening Based Extinction Maps for Co
 
 
 ## Key Paper Figures and Tables
+*  Figure 1: angular_cross_correlation/PaperPlots_ExGalRefHistogram.ipynb 
 *  Figure 2: notebooks_main1/spectra_matched/2_12_SpecTrainWise.ipynb for WISE and notebooks_main1/spectra_matched/7_1_SpecTrainSDSS_New.ipynb for SDSS
 *  Figure 5: notebooks_test/11_17_ComputeFinalACC.ipynb
 *  Figure 6: notebooks_test/11_17_ComputeFinalACC.ipynb and notebooks_test/11_17_ComputeFinalACC-Copy1.ipynb (for the only-distance-cuts map)
