@@ -16,7 +16,7 @@ dir_path = os.path.dirname(os.path.realpath(__file__))
 weights_dir=os.path.join(dir_path,"angular_cross_correlation/acc_temp_asdf")
 
 ### check if acc files have been pre-computed
-assert len(glob.glob(os.path.join(weights_dir,"*")))>1, "Prepare acc files using notebooks_main1/Prepare_ACC.ipynb"
+assert len(glob.glob(os.path.join(weights_dir,"*")))>1, "Prepare acc files using angular_cross_correlation/Prepare_ACC.ipynb"
 
 maskingnames=["NGC","FULL","South","North"]
 
