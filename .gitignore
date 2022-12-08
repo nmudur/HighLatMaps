@@ -54,3 +54,8 @@ notebooks_main1/2_17_Posteriors.ipynb
 !notebooks_test/3_8_PaperPlots_ACC.ipynb
 !notebooks_test/11_17_ComputeFinalACC-Copy1.ipynb
 *.DS_Store
+!angular_cross_correlation/Prepare_ACC.ipynb
+!angular_cross_correlation/tools.py
+!angular_cross_correlation/exgal_catalogs/.placeholder
+!angular_cross_correlation/acc_temp_asdf/.placeholder
+
